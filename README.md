@@ -8,7 +8,7 @@ pip install git+https://github.com/HeliXonProtein/OmegaFold
 download tarball
 tar zxvf ADFRsuite_Linux-x86_64_1.0.tar.gz
 cd ADFRsuite_x86_64Linux_1.0
-### change install.sh line 85 to export PATH="$PATH:$INSTALL_DIR/bin"
+change install.sh line 85 to export PATH="$PATH:$INSTALL_DIR/bin"
 ./install.sh -d ~/ADFRsuite-1.0 -c 0
 export PATH=/home/sunja/ADFRsuite-1.0/bin:$PATH
 
