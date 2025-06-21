@@ -28,8 +28,11 @@ not need to install
 Workflow:
 
 All input files are in the "input" folder
+
 All output files are in the "output" folder
+
 Input: (1) PDB file for target; (2) peptide sequence
+
 Output: (1) 10 pdb files for top 10 docking complex; (2) a csv file for basic information
 
 step 1. use omegafold to model the peptide structure through sequence information
