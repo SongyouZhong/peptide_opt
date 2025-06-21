@@ -1,0 +1,22 @@
+>complex, score=3.1044, global_score=1.5434, fixed_chains=['B', 'C'], designed_chains=['A'], model_name=v_48_020, git_hash=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57, seed=37
+GNGVPNLRGDLQVLGQRVGRT
+>T=0.1, sample=1, score=1.3682, global_score=1.5019, seq_recovery=0.1905
+PLLVLLLLLELLLDPETVLKS
+>T=0.1, sample=2, score=1.3491, global_score=1.5051, seq_recovery=0.1429
+SPLLKKLLEELLANPETVLKS
+>T=0.1, sample=3, score=1.3973, global_score=1.5119, seq_recovery=0.1905
+PLLLPLLLEELLADPETVLKS
+>T=0.1, sample=4, score=1.5132, global_score=1.5003, seq_recovery=0.1429
+SLLLLLLLKELLSNPSTVLQS
+>T=0.1, sample=5, score=1.3794, global_score=1.5248, seq_recovery=0.1429
+SLDLLELLEELLADPETVLKS
+>T=0.1, sample=6, score=1.4325, global_score=1.5197, seq_recovery=0.1429
+LPLEELLLKELLENPETVLKS
+>T=0.1, sample=7, score=1.4988, global_score=1.5189, seq_recovery=0.1429
+GLLDLLNLLELLLNPETVLKS
+>T=0.1, sample=8, score=1.4169, global_score=1.5187, seq_recovery=0.1429
+SPLLQLLAEELAADPETVLKS
+>T=0.1, sample=9, score=1.4275, global_score=1.5196, seq_recovery=0.1905
+SLLEELLREELEADPETVLKS
+>T=0.1, sample=10, score=1.4781, global_score=1.5061, seq_recovery=0.1429
+SLLELLLLLELLLDPETVLKA

@@ -1,0 +1,22 @@
+>complex, score=2.7588, global_score=1.5403, fixed_chains=['B', 'C'], designed_chains=['A'], model_name=v_48_020, git_hash=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57, seed=37
+GNGVPNLRGDLQVLGQRVGRT
+>T=0.1, sample=1, score=1.6661, global_score=1.5116, seq_recovery=0.2381
+GSQLSNLLAELEELLSLLLTE
+>T=0.1, sample=2, score=1.5915, global_score=1.5147, seq_recovery=0.2381
+GSQLSNLLEELLRLLSLLLSL
+>T=0.1, sample=3, score=1.5907, global_score=1.5213, seq_recovery=0.2381
+GSQLSNLLAELLELLELLLSE
+>T=0.1, sample=4, score=1.5770, global_score=1.5050, seq_recovery=0.2381
+GSQLSNLLSELLELLNELLTE
+>T=0.1, sample=5, score=1.5236, global_score=1.5319, seq_recovery=0.1905
+GSQLSNLAEQLLAELLALLLG
+>T=0.1, sample=6, score=1.5710, global_score=1.5265, seq_recovery=0.1905
+GSELSNLLSRLLEELLLKLLL
+>T=0.1, sample=7, score=1.6602, global_score=1.5278, seq_recovery=0.1905
+GSEISNLLAKLLEEKLLKETL
+>T=0.1, sample=8, score=1.5580, global_score=1.5247, seq_recovery=0.2381
+GSELANLAAELAELLAALLSG
+>T=0.1, sample=9, score=1.5448, global_score=1.5273, seq_recovery=0.1429
+GSQLSNLLAQALEELLASLLS
+>T=0.1, sample=10, score=1.5913, global_score=1.5111, seq_recovery=0.1905
+GSQLSNLLAQLLEELLALLLL
