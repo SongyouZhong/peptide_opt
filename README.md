@@ -25,7 +25,8 @@ python3 -m pip install biopython
 git clone https://github.com/dauparas/ProteinMPNN
 not need to install
 
-Workflow
+Workflow:
+
 All input files are in the "input" folder
 All output files are in the "output" folder
 Input: (1) PDB file for target; (2) peptide sequence
