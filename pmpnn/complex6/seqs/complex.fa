@@ -1,22 +1,22 @@
->complex, score=2.8270, global_score=1.5378, fixed_chains=['B', 'C'], designed_chains=['A'], model_name=v_48_020, git_hash=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57, seed=37
+>complex, score=2.9668, global_score=1.5424, fixed_chains=['B', 'C'], designed_chains=['A'], model_name=v_48_020, git_hash=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57, seed=37
 GNGVPNLRGDLQVLGQRVGRT
->T=0.1, sample=1, score=1.2880, global_score=1.4976, seq_recovery=0.2857
-GPGKPLDILDQSSLGYALLLS
->T=0.1, sample=2, score=1.2751, global_score=1.5043, seq_recovery=0.2857
-GSGSFLDIEDQSSLGYRLLLS
->T=0.1, sample=3, score=1.2752, global_score=1.5095, seq_recovery=0.2381
-GPGSFRDIEDQTSLGYALLLS
->T=0.1, sample=4, score=1.2876, global_score=1.4956, seq_recovery=0.2381
-GPGSFRDIEDQSSLGSALLLS
->T=0.1, sample=5, score=1.1750, global_score=1.5208, seq_recovery=0.2857
-GAGCPYDVEDCTSEGYRLLLS
->T=0.1, sample=6, score=1.1250, global_score=1.5108, seq_recovery=0.2857
-GPGCPYDIEDCTSEGYRKLLS
->T=0.1, sample=7, score=1.1042, global_score=1.5104, seq_recovery=0.2857
-GPGCPYDIEDCSSEGYRLLLS
->T=0.1, sample=8, score=1.2907, global_score=1.5155, seq_recovery=0.2857
-GAGKPRDISDQSSLGYALLLS
->T=0.1, sample=9, score=1.2979, global_score=1.5170, seq_recovery=0.1905
-GPGSFRNIEDQSSEGYAKLLS
->T=0.1, sample=10, score=1.2425, global_score=1.4985, seq_recovery=0.2381
-GPGCFRPVLDCSSLGSALLLS
+>T=0.1, sample=1, score=1.2936, global_score=1.5012, seq_recovery=0.0952
+GGSLLERLEDELAELLARLLG
+>T=0.1, sample=2, score=1.3608, global_score=1.5082, seq_recovery=0.1429
+GGSLEEILEDELAVLQALLEG
+>T=0.1, sample=3, score=1.4140, global_score=1.5141, seq_recovery=0.0952
+GGSLEEILADELAVLEALKKG
+>T=0.1, sample=4, score=1.3108, global_score=1.4971, seq_recovery=0.0952
+GGSLLERLLDELAVLLALLTG
+>T=0.1, sample=5, score=1.2753, global_score=1.5243, seq_recovery=0.1429
+GGSLLDRLADLLAVLLARLVG
+>T=0.1, sample=6, score=1.4079, global_score=1.5210, seq_recovery=0.0952
+GGSLEEILKDTLAILLAKLLG
+>T=0.1, sample=7, score=1.3606, global_score=1.5188, seq_recovery=0.0952
+GGSLEEILRDILAVLLARLLG
+>T=0.1, sample=8, score=1.3004, global_score=1.5175, seq_recovery=0.0952
+GGSLLQRLADELAVELARLLG
+>T=0.1, sample=9, score=1.3330, global_score=1.5206, seq_recovery=0.0952
+GGTEEERLLDELAELLARLLG
+>T=0.1, sample=10, score=1.3883, global_score=1.5052, seq_recovery=0.0952
+GGSLLEILLDTLEEILARLIG
