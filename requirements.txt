@@ -1,0 +1,4 @@
+# 肽段优化依赖项
+biopython>=1.79
+pandas>=1.3.0
+numpy>=1.21.0
