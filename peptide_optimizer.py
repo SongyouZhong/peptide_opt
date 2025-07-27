@@ -23,12 +23,16 @@ class PeptideOptimizer:
     """肽段优化主类"""
     
     def __init__(self, input_dir="./input", output_dir="./output", 
-                 proteinmpnn_dir="./ProteinMPNN/", cores=12):
+                 proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.proteinmpnn_dir = Path(proteinmpnn_dir)
         self.cores = cores
-        self.pmpnn_dir = Path("./pmpnn")
+        self.cleanup = cleanup  # 是否清理中间文件
+        
+        # 中间文件目录
+        self.middle_dir = Path("./middlefiles")
+        self.pmpnn_dir = self.middle_dir / "pmpnn"
         
         # Hopp-Woods hydrophilicity scale
         self.hopp_woods = {
@@ -39,8 +43,9 @@ class PeptideOptimizer:
             'T': -0.4, 'W': -3.4, 'Y': -2.3, 'V': -1.5
         }
         
-        # 创建输出目录
+        # 创建必要的目录
         self.output_dir.mkdir(exist_ok=True)
+        self.middle_dir.mkdir(exist_ok=True)
         
     def log(self, message):
         """日志输出"""
@@ -67,7 +72,8 @@ class PeptideOptimizer:
         if not peptide_fasta.exists():
             raise FileNotFoundError(f"Peptide FASTA file not found: {peptide_fasta}")
             
-        command = f"omegafold --model 2 {peptide_fasta} ."
+        # 输出到中间文件目录
+        command = f"omegafold --model 2 {peptide_fasta} {self.middle_dir}"
         self.run_command(command, "Predicting peptide structure")
         
     def step2_add_hydrogens(self):
@@ -80,26 +86,26 @@ class PeptideOptimizer:
                 return residue.id[0] == ' '
 
         input_pdb = self.input_dir / "5ffg.pdb"
-        output_pdb = "receptor.pdb"
+        output_pdb = self.middle_dir / "receptor.pdb"
 
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("structure", str(input_pdb))
 
         io = PDBIO()
         io.set_structure(structure)
-        io.save(output_pdb, select=NoHetatmSelect())
+        io.save(str(output_pdb), select=NoHetatmSelect())
 
         # 使用PyMOL添加氢原子
-        cmd.load("receptor.pdb")
+        cmd.load(str(output_pdb))
         cmd.remove("elem H")
         cmd.h_add("all")
-        cmd.save("receptorH.pdb")
+        cmd.save(str(self.middle_dir / "receptorH.pdb"))
         cmd.reinitialize()
 
-        cmd.load("peptide.pdb")
+        cmd.load(str(self.middle_dir / "peptide.pdb"))
         cmd.remove("elem H")
         cmd.h_add("all")
-        cmd.save("peptideH.pdb")
+        cmd.save(str(self.middle_dir / "peptideH.pdb"))
         cmd.reinitialize()
         
     def step3_docking(self):
@@ -112,16 +118,24 @@ class PeptideOptimizer:
             lines = f.readlines()
             peptide_seq = lines[1].strip()
         
-        # 准备受体和配体
-        commands = [
-            "prepare_receptor -r receptorH.pdb -o receptorH.pdbqt",
-            "prepare_ligand -l peptideH.pdb -o peptideH.pdbqt",
-            "agfr -r receptorH.pdbqt -l peptideH.pdbqt -asv 1.1 -o complex",
-            f"adcp -t complex.trg -s {peptide_seq} -N 10 -c {self.cores} -o ./peptide"
-        ]
+        # 切换到中间文件目录进行操作
+        original_cwd = os.getcwd()
+        os.chdir(self.middle_dir)
         
-        for command in commands:
-            self.run_command(command)
+        try:
+            # 准备受体和配体
+            commands = [
+                "prepare_receptor -r receptorH.pdb -o receptorH.pdbqt",
+                "prepare_ligand -l peptideH.pdb -o peptideH.pdbqt",
+                "agfr -r receptorH.pdbqt -l peptideH.pdbqt -asv 1.1 -o complex",
+                f"adcp -t complex.trg -s {peptide_seq} -N 10 -c {self.cores} -o ./peptide"
+            ]
+            
+            for command in commands:
+                self.run_command(command)
+        finally:
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
             
     def step4_sort_atoms(self):
         """步骤4: 原子排序和添加氢原子"""
@@ -129,34 +143,40 @@ class PeptideOptimizer:
         
         for i in range(1, 11):
             parser = PDBParser(QUIET=True)
-            structure = parser.get_structure("A", f'peptide_ranked_{i}.pdb')
+            input_file = self.middle_dir / f'peptide_ranked_{i}.pdb'
+            structure = parser.get_structure("A", str(input_file))
 
             io = PDBIO()
             io.set_structure(structure)
-            io.save(f'peptide_ranked_{i}_sorted.pdb')
+            sorted_file = self.middle_dir / f'peptide_ranked_{i}_sorted.pdb'
+            io.save(str(sorted_file))
 
-            cmd.load(f'peptide_ranked_{i}_sorted.pdb')
+            cmd.load(str(sorted_file))
             cmd.remove("elem H")
             cmd.h_add("all")
-            cmd.save(f'peptide_ranked_{i}_sorted_H.pdb')
+            sorted_h_file = self.middle_dir / f'peptide_ranked_{i}_sorted_H.pdb'
+            cmd.save(str(sorted_h_file))
             cmd.reinitialize()
             
     def step5_score_binding(self):
         """步骤5: 计算结合亲和力评分"""
         self.log("Step 5: Calculating binding affinity scores")
         
-        with open('score_rank_1_10.dat', 'w') as file_out:
+        score_file = self.middle_dir / 'score_rank_1_10.dat'
+        with open(score_file, 'w') as file_out:
             for i in range(1, 11):
-                ifile = f'peptide_ranked_{i}_sorted_H.pdb'
+                ifile = self.middle_dir / f'peptide_ranked_{i}_sorted_H.pdb'
                 
                 # 准备配体
-                self.run_command(f'prepare_ligand -l {ifile} -o {ifile}qt')
+                prepare_cmd = f'prepare_ligand -l {ifile} -o {ifile}qt'
+                self.run_command(prepare_cmd)
                 
-                pdbqt = f'peptide_ranked_{i}_sorted_H.pdbqt'
+                pdbqt = self.middle_dir / f'peptide_ranked_{i}_sorted_H.pdbqt'
+                receptor_pdbqt = self.middle_dir / "receptorH.pdbqt"
                 cmd = [
                     "vina",
-                    "--ligand", pdbqt,
-                    "--receptor", "receptorH.pdbqt",
+                    "--ligand", str(pdbqt),
+                    "--receptor", str(receptor_pdbqt),
                     "--score_only",
                     "--exhaustiveness", "1",
                     "--num_modes", "1"
@@ -201,14 +221,14 @@ class PeptideOptimizer:
             complex_dir.mkdir(exist_ok=True)
 
             # 输入/输出文件
-            peptide_pdb = f'peptide_ranked_{n}_sorted_H.pdb'
-            protein_pdb = 'receptorH.pdb'
+            peptide_pdb = self.middle_dir / f'peptide_ranked_{n}_sorted_H.pdb'
+            protein_pdb = self.middle_dir / 'receptorH.pdb'
             output_pdb = complex_dir / 'complex.pdb'
 
             # 解析结构
             parser = PDBParser(QUIET=True)
-            peptide_structure = parser.get_structure("peptide", peptide_pdb)
-            protein_structure = parser.get_structure("protein", protein_pdb)
+            peptide_structure = parser.get_structure("peptide", str(peptide_pdb))
+            protein_structure = parser.get_structure("protein", str(protein_pdb))
 
             # 初始化新结构
             builder = StructureBuilder.StructureBuilder()
@@ -306,7 +326,7 @@ class PeptideOptimizer:
         
     def step8_final_analysis(self):
         """步骤8: 最终分析和报告生成"""
-        self.log("Step         adcp -t complex.trg -s {peptide_seq} -N 10 -c {self.cores} -o ./peptide: Final analysis and report generation")
+        self.log("Step 8: Final analysis and report generation")
         
         # 读取原始序列
         peptide_fasta = self.input_dir / "peptide.fasta"
@@ -332,7 +352,8 @@ class PeptideOptimizer:
         }
 
         # 读取亲和力评分
-        with open('score_rank_1_10.dat', 'r') as file_in:
+        score_file = self.middle_dir / 'score_rank_1_10.dat'
+        with open(score_file, 'r') as file_in:
             for line in file_in.readlines():
                 tmp = line.strip().split()
                 ascore = float(tmp[1])
@@ -375,6 +396,20 @@ class PeptideOptimizer:
         
         self.log(f"Final analysis completed. Results saved to {output_csv}")
         
+    def cleanup_intermediate_files(self):
+        """清理中间文件"""
+        if not self.cleanup:
+            self.log("Cleanup disabled, keeping intermediate files")
+            return
+            
+        self.log("Cleaning up intermediate files...")
+        try:
+            if self.middle_dir.exists():
+                shutil.rmtree(self.middle_dir)
+                self.log(f"Removed intermediate files directory: {self.middle_dir}")
+        except Exception as e:
+            self.log(f"Warning: Failed to clean up intermediate files: {e}")
+        
     def run_full_pipeline(self):
         """运行完整的肽段优化流程"""
         self.log("Starting peptide optimization pipeline")
@@ -389,10 +424,15 @@ class PeptideOptimizer:
             self.step7_proteinmpnn_optimization()
             self.step8_final_analysis()
             
+            # 清理中间文件
+            self.cleanup_intermediate_files()
+            
             self.log("Peptide optimization pipeline completed successfully!")
             
         except Exception as e:
             self.log(f"Pipeline failed with error: {str(e)}")
+            if self.cleanup:
+                self.log("Keeping intermediate files for debugging...")
             raise
 
 
@@ -406,6 +446,7 @@ def main():
     parser.add_argument('--proteinmpnn_dir', default='./ProteinMPNN/', help='ProteinMPNN directory')
     parser.add_argument('--cores', type=int, default=12, help='Number of CPU cores for docking')
     parser.add_argument('--step', type=int, help='Run only specific step (1-8)')
+    parser.add_argument('--no-cleanup', action='store_true', help='Keep intermediate files (useful for debugging)')
     
     args = parser.parse_args()
     
@@ -413,7 +454,8 @@ def main():
         input_dir=args.input_dir,
         output_dir=args.output_dir,
         proteinmpnn_dir=args.proteinmpnn_dir,
-        cores=args.cores
+        cores=args.cores,
+        cleanup=not args.no_cleanup  # 默认清理，除非指定--no-cleanup
     )
     
     if args.step:

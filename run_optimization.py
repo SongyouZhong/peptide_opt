@@ -43,7 +43,7 @@ def main():
         sys.exit(1)
     
     # 创建优化器实例
-    optimizer = PeptideOptimizer()
+    optimizer = PeptideOptimizer(cleanup=True)  # 默认清理中间文件
     
     try:
         # 运行完整流程
@@ -52,9 +52,11 @@ def main():
         print("结果文件保存在 ./output/ 目录中")
         print("- result.csv: 详细的分析报告")
         print("- complex1.pdb - complex10.pdb: 优化后的复合物结构")
+        print("- 中间文件已自动清理")
         
     except Exception as e:
         print(f"流程执行失败: {e}")
+        print("中间文件保留在 ./middlefiles/ 目录中用于调试")
         sys.exit(1)
 
 if __name__ == "__main__":

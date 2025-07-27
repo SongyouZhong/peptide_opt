@@ -44,8 +44,11 @@ python run_optimization.py
 
 ### 高级使用
 ```bash
-# 运行完整流程
+# 运行完整流程（默认会清理中间文件）
 python peptide_optimizer.py
+
+# 保留中间文件（用于调试）
+python peptide_optimizer.py --no-cleanup
 
 # 只运行特定步骤
 python peptide_optimizer.py --step 1  # 只运行步骤1
@@ -53,6 +56,9 @@ python peptide_optimizer.py --step 3  # 只运行步骤3
 
 # 自定义参数
 python peptide_optimizer.py --input_dir ./my_input --output_dir ./my_output --cores 8
+
+# 手动清理中间文件
+rm -rf ./middlefiles
 ```
 
 ## 输入文件
@@ -66,6 +72,27 @@ python peptide_optimizer.py --input_dir ./my_input --output_dir ./my_output --co
 结果保存在 `output/` 目录中:
 - `result.csv`: 详细的分析报告
 - `complex1.pdb - complex10.pdb`: 优化后的复合物结构
+
+## 中间文件管理
+
+程序会在 `middlefiles/` 目录中生成大量中间文件：
+```
+./middlefiles/
+├── peptide.pdb                       # OmegaFold预测的肽段结构
+├── receptor.pdb, receptorH.pdb       # 处理后的受体结构
+├── peptideH.pdb                      # 添加氢原子的肽段
+├── *.pdbqt                           # AutoDock格式文件
+├── complex.trg, complex.log          # 对接配置文件
+├── peptide_ranked_*.pdb              # 对接结果
+├── score_rank_1_10.dat               # 亲和力评分
+└── pmpnn/                            # ProteinMPNN工作目录
+    ├── complex1/
+    ├── complex2/
+    └── ...
+```
+
+**默认行为**: 程序成功完成后会自动删除 `middlefiles/` 目录
+**调试模式**: 使用 `--no-cleanup` 参数可以保留中间文件
 
 ## 流程步骤
 
