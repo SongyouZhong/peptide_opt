@@ -162,21 +162,39 @@ class PeptideOptimizer:
         """步骤5: 计算结合亲和力评分"""
         self.log("Step 5: Calculating binding affinity scores")
         
+        # 保存当前工作目录
+        original_cwd = os.getcwd()
+        
         score_file = self.middle_dir / 'score_rank_1_10.dat'
         with open(score_file, 'w') as file_out:
             for i in range(1, 11):
-                ifile = self.middle_dir / f'peptide_ranked_{i}_sorted_H.pdb'
+                input_filename = f'peptide_ranked_{i}_sorted_H.pdb'
+                output_filename = f'peptide_ranked_{i}_sorted_H.pdbqt'
+                input_file = self.middle_dir / input_filename
+                output_file = self.middle_dir / output_filename
                 
-                # 准备配体
-                prepare_cmd = f'prepare_ligand -l {ifile} -o {ifile}qt'
-                self.run_command(prepare_cmd)
+                # 检查输入文件是否存在
+                if not input_file.exists():
+                    self.log(f"Warning: Input file does not exist: {input_file}")
+                    continue
                 
-                pdbqt = self.middle_dir / f'peptide_ranked_{i}_sorted_H.pdbqt'
+                # 切换到中间文件目录执行prepare_ligand
+                os.chdir(self.middle_dir)
+                
+                try:
+                    # 准备配体，使用相对路径
+                    prepare_cmd = f'prepare_ligand -l {input_filename} -o {output_filename}'
+                    self.run_command(prepare_cmd)
+                finally:
+                    # 恢复原始工作目录
+                    os.chdir(original_cwd)
+                
+                # 使用vina评分
                 receptor_pdbqt = self.middle_dir / "receptorH.pdbqt"
                 cmd = [
                     "vina",
-                    "--ligand", str(pdbqt),
-                    "--receptor", str(receptor_pdbqt),
+                    "--ligand", str(output_file.resolve()),
+                    "--receptor", str(receptor_pdbqt.resolve()),
                     "--score_only",
                     "--exhaustiveness", "1",
                     "--num_modes", "1"
