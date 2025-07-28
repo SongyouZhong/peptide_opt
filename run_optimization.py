@@ -15,9 +15,7 @@ try:
     from peptide_optimizer import PeptideOptimizer
 except ImportError as e:
     print(f"Error importing PeptideOptimizer: {e}")
-    print("Please make sure all dependencies are installed:")
-    print("pip install -r requirements.txt")
-    print("conda install -c conda-forge -c schrodinger pymol-bundle")
+    print("Please make sure all dependencies are installed in your conda environment")
     sys.exit(1)
 
 def main():

@@ -1,0 +1,9 @@
+name: peptide
+channels:
+  - defaults
+dependencies:
+  - python==3.10.13
+  - pymol-bundle
+  - autodock-vina
+  - uvicorn
+  - fastapi
