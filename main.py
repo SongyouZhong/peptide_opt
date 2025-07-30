@@ -43,6 +43,139 @@ async def get_db_connection():
         logger.error(f"数据库连接失败: {e}")
         return None
 
+async def process_peptide_optimization_task(task_id: str, job_dir: str, connection):
+    """处理单个肽段优化任务"""
+    # 保存当前工作目录
+    original_cwd = os.getcwd()
+    
+    try:
+        logger.info(f"开始处理肽段优化任务: {task_id}")
+        
+        # 切换到peptide_opt目录
+        peptide_opt_dir = Path(__file__).parent.absolute()
+        os.chdir(peptide_opt_dir)
+        logger.info(f"切换工作目录到: {peptide_opt_dir}")
+        
+        # 读取任务配置文件
+        job_path = Path(job_dir)
+        config_file = job_path / "optimization_config.txt"
+        
+        if not config_file.exists():
+            raise FileNotFoundError(f"配置文件不存在: {config_file}")
+        
+        # 解析配置文件
+        config = {}
+        with open(config_file, 'r') as f:
+            for line in f:
+                if '=' in line:
+                    key, value = line.strip().split('=', 1)
+                    # 转换数据类型
+                    if value.lower() in ('true', 'false'):
+                        config[key] = value.lower() == 'true'
+                    elif value.isdigit():
+                        config[key] = int(value)
+                    else:
+                        config[key] = value
+        
+        logger.info(f"任务配置: {config}")
+        
+        # 检查输入文件
+        input_dir = job_path / "input"
+        peptide_fasta = input_dir / "peptide.fasta"
+        receptor_pdb = input_dir / "5ffg.pdb"
+        
+        if not peptide_fasta.exists():
+            raise FileNotFoundError(f"肽段FASTA文件不存在: {peptide_fasta}")
+        if not receptor_pdb.exists():
+            raise FileNotFoundError(f"受体PDB文件不存在: {receptor_pdb}")
+        
+        # 设置输出目录
+        output_dir = job_path / "output"
+        output_dir.mkdir(exist_ok=True)
+        
+        # 创建PeptideOptimizer实例
+        optimizer = PeptideOptimizer(
+            input_dir=str(input_dir),
+            output_dir=str(output_dir),
+            proteinmpnn_dir="./ProteinMPNN/",  # 使用相对路径
+            cores=config.get('cores', 12),
+            cleanup=config.get('cleanup', True)
+        )
+        
+        # 更新任务状态为running
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "UPDATE tasks SET status = %s, started_at = NOW() WHERE id = %s",
+                ('running', task_id)
+            )
+        
+        logger.info(f"任务 {task_id} 开始运行优化流程")
+        
+        # 运行优化流程
+        if config.get('step'):
+            # 运行指定步骤
+            step = config['step']
+            step_methods = {
+                1: optimizer.step1_model_peptide,
+                2: optimizer.step2_add_hydrogens,
+                3: optimizer.step3_docking,
+                4: optimizer.step4_sort_atoms,
+                5: optimizer.step5_score_binding,
+                6: optimizer.step6_merge_structures,
+                7: optimizer.step7_proteinmpnn_optimization,
+                8: optimizer.step8_final_analysis
+            }
+            
+            if step in step_methods:
+                logger.info(f"执行步骤 {step}")
+                step_methods[step]()
+            else:
+                raise ValueError(f"无效的步骤号: {step}")
+        else:
+            # 运行完整流程
+            if config.get('proteinmpnn_enabled', True):
+                logger.info("执行完整的肽段优化流程（包含ProteinMPNN）")
+                optimizer.run_full_pipeline()
+            else:
+                logger.info("执行肽段优化流程（不包含ProteinMPNN步骤7）")
+                # 运行步骤1-6和8
+                optimizer.step1_model_peptide()
+                optimizer.step2_add_hydrogens()
+                optimizer.step3_docking()
+                optimizer.step4_sort_atoms()
+                optimizer.step5_score_binding()
+                optimizer.step6_merge_structures()
+                optimizer.step8_final_analysis()
+                
+                # 清理中间文件
+                if optimizer.cleanup:
+                    optimizer.cleanup_intermediate_files()
+        
+        # 更新任务状态为finished
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
+                ('finished', task_id)
+            )
+        
+        logger.info(f"任务 {task_id} 完成")
+        
+    except Exception as e:
+        logger.error(f"任务 {task_id} 执行失败: {str(e)}")
+        # 更新任务状态为failed
+        try:
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
+                    ('failed', task_id)
+                )
+        except Exception as db_error:
+            logger.error(f"更新任务状态失败: {db_error}")
+        raise
+    finally:
+        # 恢复原始工作目录
+        os.chdir(original_cwd)
+
 async def query_tasks():
     """查询tasks表中的待处理任务"""
     connection = await get_db_connection()
@@ -51,28 +184,27 @@ async def query_tasks():
     
     try:
         async with connection.cursor() as cursor:
-            # 查询状态为pending的任务
+            # 查询状态为pending的肽段优化任务
             await cursor.execute(
-                "SELECT id, user_id, task_type, job_dir, status FROM tasks WHERE status = %s",
-                ('pending',)
+                "SELECT id, user_id, task_type, job_dir, status FROM tasks WHERE status = %s AND task_type = %s",
+                ('pending', 'peptide_optimization')
             )
             tasks = await cursor.fetchall()
             
             if tasks:
-                logger.info(f"发现 {len(tasks)} 个待处理任务")
+                logger.info(f"发现 {len(tasks)} 个待处理的肽段优化任务")
                 for task in tasks:
                     task_id, user_id, task_type, job_dir, status = task
-                    logger.info(f"任务ID: {task_id}, 用户ID: {user_id}, 类型: {task_type}, 状态: {status}")
+                    logger.info(f"处理任务: ID={task_id}, 用户={user_id}, 类型={task_type}")
                     
-                    # 这里可以添加具体的任务处理逻辑
-                    # 例如：更新任务状态为processing
-                    await cursor.execute(
-                        "UPDATE tasks SET status = %s, started_at = NOW() WHERE id = %s",
-                        ('processing', task_id)
-                    )
-                    logger.info(f"任务 {task_id} 状态已更新为processing")
+                    try:
+                        # 处理肽段优化任务
+                        await process_peptide_optimization_task(task_id, job_dir, connection)
+                    except Exception as e:
+                        logger.error(f"处理任务 {task_id} 时发生错误: {e}")
+                        continue
             else:
-                logger.info("没有发现待处理任务")
+                logger.info("没有发现待处理的肽段优化任务")
                 
     except Exception as e:
         logger.error(f"查询任务时发生错误: {e}")
@@ -81,14 +213,14 @@ async def query_tasks():
 
 async def background_task_runner():
     """后台定时任务运行器"""
-    logger.info("定时任务启动，每30秒查询一次tasks表")
+    logger.info("定时任务启动，每5分钟查询一次tasks表")
     while True:
         try:
             await query_tasks()
-            await asyncio.sleep(30)  # 等待30秒
+            await asyncio.sleep(300)  # 等待5分钟（300秒）
         except Exception as e:
             logger.error(f"定时任务执行错误: {e}")
-            await asyncio.sleep(30)
+            await asyncio.sleep(60)  # 发生错误时等待1分钟后重试
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -118,134 +250,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.post("/optimize")
-async def optimize(
-    pdb_file_path: str = Form(..., description="Path to PDB file"),
-    fasta_file_path: str = Form(..., description="Path to FASTA file"),
-    output_path: str = Form(..., description="Output directory path"),
-    cores: int = Form(12, description="Number of CPU cores"),
-    cleanup: bool = Form(True, description="Clean up intermediate files")
-):
-    """
-    执行肽段优化任务
-    
-    - **pdb_file_path**: PDB结构文件路径
-    - **fasta_file_path**: FASTA序列文件路径  
-    - **output_path**: 结果输出目录路径
-    - **cores**: CPU核心数 (默认: 12)
-    - **cleanup**: 是否清理中间文件 (默认: True)
-    """
-    
-    try:
-        # 验证输入文件
-        validate_pdb_file(pdb_file_path)
-        validate_fasta_file(fasta_file_path)
-        
-        # 创建临时工作目录
-        work_dir = Path(f"./work/temp_{os.getpid()}")
-        work_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            # 创建输入目录并复制文件
-            input_dir = work_dir / "input"
-            input_dir.mkdir(exist_ok=True)
-            
-            # 复制输入文件到工作目录
-            shutil.copy2(pdb_file_path, input_dir / "5ffg.pdb")
-            shutil.copy2(fasta_file_path, input_dir / "peptide.fasta")
-            
-            # 设置输出目录
-            output_dir = work_dir / "output"
-            output_dir.mkdir(exist_ok=True)
-            
-            # 创建优化器实例
-            optimizer = PeptideOptimizer(
-                input_dir=str(input_dir),
-                output_dir=str(output_dir),
-                proteinmpnn_dir="./ProteinMPNN/",
-                cores=cores,
-                cleanup=cleanup
-            )
-            
-            # 运行优化流程
-            optimizer.run_full_pipeline()
-            
-            # 将结果复制到用户指定的输出路径
-            final_output_dir = Path(output_path)
-            final_output_dir.mkdir(parents=True, exist_ok=True)
-            
-            # 复制结果文件
-            result_files = []
-            for file in output_dir.glob("*"):
-                if file.is_file():
-                    target_file = final_output_dir / file.name
-                    shutil.copy2(file, target_file)
-                    result_files.append(str(target_file))
-            
-            return {
-                "status": "success",
-                "message": "Optimization completed successfully",
-                "output_path": output_path,
-                "result_files": result_files
-            }
-            
-        finally:
-            # 清理工作目录
-            if cleanup and work_dir.exists():
-                shutil.rmtree(work_dir, ignore_errors=True)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Optimization failed: {str(e)}")
-
-@app.get("/tasks/check")
-async def check_tasks():
-    """
-    手动检查数据库中的任务状态
-    """
-    connection = await get_db_connection()
-    if not connection:
-        raise HTTPException(status_code=500, detail="数据库连接失败")
-    
-    try:
-        async with connection.cursor() as cursor:
-            # 查询所有任务
-            await cursor.execute(
-                "SELECT id, user_id, task_type, job_dir, status, created_at FROM tasks ORDER BY created_at DESC LIMIT 10"
-            )
-            tasks = await cursor.fetchall()
-            
-            task_list = []
-            for task in tasks:
-                task_id, user_id, task_type, job_dir, status, created_at = task
-                task_list.append({
-                    "id": task_id,
-                    "user_id": user_id,
-                    "task_type": task_type,
-                    "job_dir": job_dir,
-                    "status": status,
-                    "created_at": str(created_at)
-                })
-            
-            return {
-                "status": "success",
-                "task_count": len(task_list),
-                "tasks": task_list
-            }
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"查询任务失败: {str(e)}")
-    finally:
-        connection.close()
-
-@app.get("/health")
-async def health_check():
-    """
-    健康检查端点
-    """
-    return {"status": "healthy", "message": "Peptide Optimization API is running"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=False)
