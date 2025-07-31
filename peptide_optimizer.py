@@ -23,12 +23,18 @@ class PeptideOptimizer:
     """肽段优化主类"""
     
     def __init__(self, input_dir="./input", output_dir="./output", 
-                 proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True):
+                 proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True,
+                 n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.proteinmpnn_dir = Path(proteinmpnn_dir)
         self.cores = cores
         self.cleanup = cleanup  # 是否清理中间文件
+        
+        # 新增参数
+        self.n_poses = n_poses  # adcp命令中的-N参数
+        self.num_seq_per_target = num_seq_per_target  # ProteinMPNN每个目标生成的序列数
+        self.proteinmpnn_seed = proteinmpnn_seed  # ProteinMPNN随机数种子
         
         # 中间文件目录
         self.middle_dir = Path("./middlefiles")
@@ -128,7 +134,7 @@ class PeptideOptimizer:
                 "prepare_receptor -r receptorH.pdb -o receptorH.pdbqt",
                 "prepare_ligand -l peptideH.pdb -o peptideH.pdbqt",
                 "agfr -r receptorH.pdbqt -l peptideH.pdbqt -asv 1.1 -o complex",
-                f"adcp -t complex.trg -s {peptide_seq} -N 10 -c {self.cores} -o ./peptide"
+                f"adcp -t complex.trg -s {peptide_seq} -N {self.n_poses} -c {self.cores} -o ./peptide"
             ]
             
             for command in commands:
@@ -141,7 +147,7 @@ class PeptideOptimizer:
         """步骤4: 原子排序和添加氢原子"""
         self.log("Step 4: Sorting atoms and adding hydrogens")
         
-        for i in range(1, 11):
+        for i in range(1, self.n_poses + 1):
             parser = PDBParser(QUIET=True)
             input_file = self.middle_dir / f'peptide_ranked_{i}.pdb'
             structure = parser.get_structure("A", str(input_file))
@@ -165,9 +171,9 @@ class PeptideOptimizer:
         # 保存当前工作目录
         original_cwd = os.getcwd()
         
-        score_file = self.middle_dir / 'score_rank_1_10.dat'
+        score_file = self.middle_dir / f'score_rank_1_{self.n_poses}.dat'
         with open(score_file, 'w') as file_out:
-            for i in range(1, 11):
+            for i in range(1, self.n_poses + 1):
                 input_filename = f'peptide_ranked_{i}_sorted_H.pdb'
                 output_filename = f'peptide_ranked_{i}_sorted_H.pdbqt'
                 input_file = self.middle_dir / input_filename
@@ -234,7 +240,7 @@ class PeptideOptimizer:
         
         self.pmpnn_dir.mkdir(exist_ok=True)
         
-        for n in range(1, 11):
+        for n in range(1, self.n_poses + 1):
             complex_dir = self.pmpnn_dir / f"complex{n}"
             complex_dir.mkdir(exist_ok=True)
 
@@ -282,7 +288,7 @@ class PeptideOptimizer:
         openmpnn_helper = self.proteinmpnn_dir / "helper_scripts"
         chains_to_design = "A"
         
-        for i in range(1, 11):
+        for i in range(1, self.n_poses + 1):
             output_dir = self.pmpnn_dir / f"complex{i}"
             path_for_parsed_chains = output_dir / "parsed_pdbs.jsonl"
             path_for_assigned_chains = output_dir / "assigned_pdbs.jsonl"
@@ -296,7 +302,7 @@ class PeptideOptimizer:
             self.run_command(command)
             
             # 运行ProteinMPNN
-            command = f"python3 {self.proteinmpnn_dir}/protein_mpnn_run.py --jsonl_path {path_for_parsed_chains} --out_folder {output_dir} --chain_id_jsonl {path_for_assigned_chains} --num_seq_per_target 10 --sampling_temp 0.1 --seed 37 --batch_size 1"
+            command = f"python3 {self.proteinmpnn_dir}/protein_mpnn_run.py --jsonl_path {path_for_parsed_chains} --out_folder {output_dir} --chain_id_jsonl {path_for_assigned_chains} --num_seq_per_target {self.num_seq_per_target} --sampling_temp 0.1 --seed {self.proteinmpnn_seed} --batch_size 1"
             self.run_command(command)
             
             self.log(f"complex{i} optimization completed")
@@ -370,7 +376,7 @@ class PeptideOptimizer:
         }
 
         # 读取亲和力评分
-        score_file = self.middle_dir / 'score_rank_1_10.dat'
+        score_file = self.middle_dir / f'score_rank_1_{self.n_poses}.dat'
         with open(score_file, 'r') as file_in:
             for line in file_in.readlines():
                 tmp = line.strip().split()
@@ -378,7 +384,7 @@ class PeptideOptimizer:
                 info_dict['Original sequence affinity score'].append(ascore)
 
         # 分析优化序列
-        for i in range(1, 11):
+        for i in range(1, self.n_poses + 1):
             fasta_path = self.pmpnn_dir / f'complex{i}' / 'seqs' / 'complex.fa'
             org_gscore, opt_seq, opt_gscore = self.optimal_sequence(str(fasta_path))
             mw, ip, aro, ins, gra, hyd, sec = self.analyze_sequence_properties(opt_seq)
@@ -400,13 +406,9 @@ class PeptideOptimizer:
             shutil.copy2(src, dst)
 
         # 生成DataFrame和CSV报告
-        index_labels = [
-            'Input peptide property',
-            'Docking result rank 1', 'Docking result rank 2', 'Docking result rank 3',
-            'Docking result rank 4', 'Docking result rank 5', 'Docking result rank 6',
-            'Docking result rank 7', 'Docking result rank 8', 'Docking result rank 9',
-            'Docking result rank 10'
-        ]
+        index_labels = ['Input peptide property']
+        for i in range(1, self.n_poses + 1):
+            index_labels.append(f'Docking result rank {i}')
 
         df = pd.DataFrame(info_dict, index=index_labels)
         output_csv = self.output_dir / 'result.csv'
@@ -465,6 +467,9 @@ def main():
     parser.add_argument('--cores', type=int, default=12, help='Number of CPU cores for docking')
     parser.add_argument('--step', type=int, help='Run only specific step (1-8)')
     parser.add_argument('--no-cleanup', action='store_true', help='Keep intermediate files (useful for debugging)')
+    parser.add_argument('--n_poses', type=int, default=10, help='Number of docking poses to generate (adcp -N parameter)')
+    parser.add_argument('--num_seq_per_target', type=int, default=10, help='Number of sequences per target for ProteinMPNN')
+    parser.add_argument('--proteinmpnn_seed', type=int, default=37, help='Random seed for ProteinMPNN')
     
     args = parser.parse_args()
     
@@ -473,7 +478,10 @@ def main():
         output_dir=args.output_dir,
         proteinmpnn_dir=args.proteinmpnn_dir,
         cores=args.cores,
-        cleanup=not args.no_cleanup  # 默认清理，除非指定--no-cleanup
+        cleanup=not args.no_cleanup,  # 默认清理，除非指定--no-cleanup
+        n_poses=args.n_poses,
+        num_seq_per_target=args.num_seq_per_target,
+        proteinmpnn_seed=args.proteinmpnn_seed
     )
     
     if args.step:

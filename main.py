@@ -99,7 +99,10 @@ async def process_peptide_optimization_task(task_id: str, job_dir: str, connecti
             output_dir=str(output_dir),
             proteinmpnn_dir="./ProteinMPNN/",  # 使用相对路径
             cores=config.get('cores', 12),
-            cleanup=config.get('cleanup', True)
+            cleanup=config.get('cleanup', True),
+            n_poses=config.get('n_poses', 10),
+            num_seq_per_target=config.get('num_seq_per_target', 10),
+            proteinmpnn_seed=config.get('proteinmpnn_seed', 37)
         )
         
         # 更新任务状态为running
