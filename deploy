@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Peptide Optimization 部署快捷脚本
+# 在项目根目录可直接使用 ./deploy 命令
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_SCRIPT="$SCRIPT_DIR/cicd/scripts/deploy.sh"
+
+if [ -f "$DEPLOY_SCRIPT" ]; then
+    exec "$DEPLOY_SCRIPT" "$@"
+else
+    echo "错误: 找不到部署脚本 $DEPLOY_SCRIPT"
+    exit 1
+fi
