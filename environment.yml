@@ -1,11 +1,15 @@
 name: peptide
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - python==3.10.13
-  - pymol-bundle
+  - aiomysql
+  - fastapi
+  - pandas
   - pip
+  - pymol-open-source
+  - python=3.10
   - pip:
-    - biopython
-    - pandas
+    - OmegaFold==0.0.0
+    - biopython==1.85
+    - torch==1.12.0+cu113
+    - vina==1.2.7

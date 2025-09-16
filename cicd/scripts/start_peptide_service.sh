@@ -6,8 +6,8 @@
 set -e  # 遇到错误立即退出
 
 # 配置变量
-PROJECT_DIR="/home/davis/projects/genion_quantum/peptide_opt"
-CONDA_ENV_NAME="peptide"
+PROJECT_DIR="/home/davis/projects/peptide_opt"
+micromamba_ENV_NAME="peptide"
 SERVICE_PORT=8001
 LOG_DIR="/home/davis/projects/serverlogs/peptide_opt"
 PID_FILE="$LOG_DIR/peptide_opt.pid"
@@ -41,23 +41,23 @@ create_directories() {
     mkdir -p "$PROJECT_DIR/logs"
 }
 
-# 检查conda环境
-check_conda_env() {
-    log "检查conda环境: $CONDA_ENV_NAME"
+# 检查micromamba环境
+check_micromamba_env() {
+    log "检查micromamba环境: $micromamba_ENV_NAME"
     
-    if ! conda env list | grep -q "$CONDA_ENV_NAME"; then
-        warn "conda环境 $CONDA_ENV_NAME 不存在，正在创建..."
+    if ! micromamba env list | grep -q "$micromamba_ENV_NAME"; then
+        warn "micromamba环境 $micromamba_ENV_NAME 不存在，正在创建..."
         
         # 检查环境文件
         if [ -f "$PROJECT_DIR/environment.yml" ]; then
-            log "使用environment.yml创建conda环境..."
-            conda env create -f "$PROJECT_DIR/environment.yml"
+            log "使用environment.yml创建micromamba环境..."
+            micromamba env create -f "$PROJECT_DIR/environment.yml"
         else
             error "未找到environment.yml文件"
             exit 1
         fi
     else
-        log "conda环境 $CONDA_ENV_NAME 已存在"
+        log "micromamba环境 $micromamba_ENV_NAME 已存在"
     fi
 }
 
@@ -114,11 +114,11 @@ start_service() {
     # 切换到项目目录
     cd "$PROJECT_DIR"
     
-    # 激活conda环境并启动服务
-    log "激活conda环境并启动FastAPI服务..."
+    # 激活micromamba环境并启动服务
+    log "激活micromamba环境并启动FastAPI服务..."
     
     # 使用nohup在后台启动服务
-    nohup conda run -n "$CONDA_ENV_NAME" python main.py > "$LOG_FILE" 2>&1 &
+    nohup micromamba run -n "$micromamba_ENV_NAME" python main.py > "$LOG_FILE" 2>&1 &
     local service_pid=$!
     
     # 保存PID
@@ -231,7 +231,7 @@ main() {
     case "${1:-start}" in
         start)
             create_directories
-            check_conda_env
+            check_micromamba_env
             
             if is_service_running; then
                 log "服务已在运行"

@@ -6,7 +6,7 @@
 set -e
 
 # 项目路径
-PROJECT_DIR="/home/davis/projects/genion_quantum/peptide_opt"
+PROJECT_DIR="/home/davis/projects/peptide_opt"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
@@ -132,11 +132,11 @@ test_connection() {
 check_environment() {
     log "🔍 环境检查..."
     
-    # 检查conda
-    if command -v conda &> /dev/null; then
-        log "✅ Conda已安装: $(conda --version)"
+    # 检查micromamba
+    if command -v micromamba &> /dev/null; then
+        log "✅ micromamba已安装: $(micromamba --version)"
     else
-        error "❌ Conda未安装"
+        error "❌ micromamba未安装"
         return 1
     fi
     
@@ -170,7 +170,7 @@ config_service() {
     echo "  项目目录: $PROJECT_DIR"
     echo "  服务端口: 8001"
     echo "  日志目录: /home/davis/projects/serverlogs"
-    echo "  Conda环境: peptide"
+    echo "  micromamba环境: peptide"
     echo ""
     
     read -p "是否要修改配置? (y/N): " choice
