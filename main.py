@@ -37,6 +37,10 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing async task processor...")
     async_processor = AsyncTaskProcessor()
     
+    # 启动数据库轮询
+    logger.info("Starting database polling for peptide optimization tasks...")
+    await async_processor.start_polling()
+    
     logger.info("Peptide Optimization API startup complete")
     yield
     

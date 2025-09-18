@@ -33,15 +33,15 @@ class TaskProgressCallback:
             return
             
         try:
-            # 更新数据库中的任务状态
+            # 更新数据库中的任务状态 - 只更新状态，不包含progress和info字段
             async with self.connection.cursor() as cursor:
                 await cursor.execute(
-                    "UPDATE peptide_optimization_tasks SET status = %s, progress = %s, info = %s WHERE task_id = %s",
-                    ("processing", progress, info or "", self.task_id)
+                    "UPDATE tasks SET status = %s WHERE id = %s",
+                    ("processing", self.task_id)
                 )
                 await self.connection.commit()
                 
-            logger.debug("Task %s progress updated: %.1f%% - %s", 
+            logger.info("Task %s progress: %.1f%% - %s", 
                         self.task_id, progress, info or "")
         except Exception as e:
             logger.error("Failed to update progress for task %s: %s", self.task_id, e)
@@ -60,6 +60,7 @@ class AsyncTaskProcessor:
         self.process_executor = ProcessPoolExecutor(max_workers=max_workers)
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.is_running = True
+        self.polling_task = None
         
         # 数据库配置
         self.db_config = {
@@ -72,6 +73,48 @@ class AsyncTaskProcessor:
         }
         
         logger.info("AsyncTaskProcessor initialized with %d workers", max_workers)
+    
+    async def start_polling(self):
+        """启动数据库轮询"""
+        if self.polling_task is None:
+            logger.info("Starting database polling for peptide optimization tasks...")
+            self.polling_task = asyncio.create_task(self._poll_database_tasks())
+    
+    async def _poll_database_tasks(self):
+        """定时从数据库获取待处理的peptide优化任务"""
+        while self.is_running:
+            try:
+                connection = await self.get_db_connection()
+                if connection:
+                    try:
+                        async with connection.cursor() as cursor:
+                            # 查询状态为pending的peptide_optimization任务
+                            await cursor.execute(
+                                "SELECT id, job_dir FROM tasks WHERE task_type = 'peptide_optimization' AND status = 'pending' LIMIT 5"
+                            )
+                            pending_tasks = await cursor.fetchall()
+                            
+                            if pending_tasks:
+                                logger.info(f"Found {len(pending_tasks)} pending peptide optimization tasks")
+                                
+                            for task in pending_tasks:
+                                task_id, job_dir = task
+                                # 检查任务是否已在处理中
+                                if task_id not in self.active_tasks:
+                                    logger.info(f"Submitting peptide optimization task: {task_id}")
+                                    await self.submit_task(task_id, job_dir)
+                                else:
+                                    logger.debug(f"Task {task_id} already in progress, skipping")
+                    finally:
+                        connection.close()
+                        
+            except Exception as e:
+                logger.error(f"Error polling database for tasks: {e}")
+            
+            # 等待30秒后再次轮询
+            await asyncio.sleep(30)
+        
+        logger.info("Database polling stopped")
     
     async def get_db_connection(self):
         """获取数据库连接"""
@@ -104,9 +147,10 @@ class AsyncTaskProcessor:
                 # 切换到任务目录
                 os.chdir(job_dir)
                 
-                # 检查必要文件
-                fasta_file = "peptide.fasta"
-                pdb_file = "receptor.pdb"
+                # 检查必要文件 - 文件在input子目录中
+                input_dir = os.path.join(job_dir, "input")
+                fasta_file = os.path.join(input_dir, "peptide.fasta")
+                pdb_file = os.path.join(input_dir, "5ffg.pdb")
                 
                 if not os.path.exists(fasta_file):
                     raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
@@ -120,15 +164,20 @@ class AsyncTaskProcessor:
                 if not validate_pdb_file(pdb_file):
                     raise ValueError("Invalid PDB file format")
                 
-                # 创建优化器
+                # 创建优化器 - 传递目录路径而不是文件路径
                 await progress_callback.update_progress(20, "Initializing optimizer")
-                optimizer = PeptideOptimizer(pdb_file, fasta_file)
+                optimizer = PeptideOptimizer(
+                    input_dir=input_dir,
+                    output_dir=os.path.join(job_dir, "output"),
+                    cores=12,  # 可以从配置文件读取
+                    cleanup=True
+                )
                 
                 # 执行优化步骤
                 await progress_callback.update_progress(30, "Running peptide optimization")
                 result = await asyncio.get_event_loop().run_in_executor(
                     self.thread_executor, 
-                    optimizer.run_optimization
+                    optimizer.run_full_pipeline
                 )
                 
                 await progress_callback.update_progress(90, "Finalizing results")
@@ -136,11 +185,10 @@ class AsyncTaskProcessor:
                 # 更新数据库为完成状态
                 async with connection.cursor() as cursor:
                     await cursor.execute(
-                        """UPDATE peptide_optimization_tasks 
-                           SET status = %s, progress = %s, info = %s, result = %s 
-                           WHERE task_id = %s""",
-                        ("finished", 100, "Optimization completed successfully", 
-                         json.dumps(result) if result else None, task_id)
+                        """UPDATE tasks 
+                           SET status = %s 
+                           WHERE id = %s""",
+                        ("finished", task_id)
                     )
                     await connection.commit()
                 
@@ -158,8 +206,8 @@ class AsyncTaskProcessor:
                 try:
                     async with connection.cursor() as cursor:
                         await cursor.execute(
-                            "UPDATE peptide_optimization_tasks SET status = %s, info = %s WHERE task_id = %s",
-                            ("failed", str(e), task_id)
+                            "UPDATE tasks SET status = %s WHERE id = %s",
+                            ("failed", task_id)
                         )
                         await connection.commit()
                 except Exception as db_error:
@@ -219,8 +267,8 @@ class AsyncTaskProcessor:
                 try:
                     async with connection.cursor() as cursor:
                         await cursor.execute(
-                            "UPDATE peptide_optimization_tasks SET status = %s, info = %s WHERE task_id = %s",
-                            ("cancelled", "Task cancelled by user", task_id)
+                            "UPDATE tasks SET status = %s WHERE id = %s",
+                            ("cancelled", task_id)
                         )
                         await connection.commit()
                 finally:
@@ -246,6 +294,15 @@ class AsyncTaskProcessor:
         """关闭任务处理器"""
         logger.info("Shutting down AsyncTaskProcessor...")
         self.is_running = False
+        
+        # 停止数据库轮询
+        if self.polling_task:
+            logger.info("Stopping database polling...")
+            self.polling_task.cancel()
+            try:
+                await self.polling_task
+            except asyncio.CancelledError:
+                pass
         
         # 取消所有活动任务
         for task_id, task in self.active_tasks.items():
