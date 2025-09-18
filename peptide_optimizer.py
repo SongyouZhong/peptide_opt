@@ -202,6 +202,7 @@ class PeptideOptimizer:
                     "--ligand", str(output_file.resolve()),
                     "--receptor", str(receptor_pdbqt.resolve()),
                     "--score_only",
+                    "--autobox",
                     "--exhaustiveness", "1",
                     "--num_modes", "1"
                 ]
