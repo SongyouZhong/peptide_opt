@@ -24,12 +24,14 @@ class PeptideOptimizer:
     
     def __init__(self, input_dir="./input", output_dir="./output", 
                  proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True,
-                 n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37):
+                 n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37,
+                 progress_callback=None):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.proteinmpnn_dir = Path(proteinmpnn_dir)
         self.cores = cores
         self.cleanup = cleanup  # 是否清理中间文件
+        self.progress_callback = progress_callback  # 进度回调函数
         
         # 新增参数
         self.n_poses = n_poses  # adcp命令中的-N参数
@@ -56,6 +58,12 @@ class PeptideOptimizer:
     def log(self, message):
         """日志输出"""
         print(f"[PeptideOptimizer] {message}")
+        
+    def update_progress(self, progress, message):
+        """更新进度"""
+        if self.progress_callback:
+            self.progress_callback(progress, message)
+        self.log(f"Progress {progress:.1f}%: {message}")
         
     def run_command(self, command, description=""):
         """执行系统命令"""
@@ -130,10 +138,32 @@ class PeptideOptimizer:
         
         try:
             # 准备受体和配体
+            self.update_progress(56, "Preparing receptor structure")
             commands = [
                 "prepare_receptor -r receptorH.pdb -o receptorH.pdbqt",
+            ]
+            
+            for command in commands:
+                self.run_command(command)
+                
+            self.update_progress(57, "Preparing ligand structure")
+            commands = [
                 "prepare_ligand -l peptideH.pdb -o peptideH.pdbqt",
+            ]
+            
+            for command in commands:
+                self.run_command(command)
+                
+            self.update_progress(58, "Generating docking grid")
+            commands = [
                 "agfr -r receptorH.pdbqt -l peptideH.pdbqt -asv 1.1 -o complex",
+            ]
+            
+            for command in commands:
+                self.run_command(command)
+                
+            self.update_progress(60, f"Running molecular docking ({self.n_poses} poses)")
+            commands = [
                 f"adcp -t complex.trg -s {peptide_seq} -N {self.n_poses} -c {self.cores} -o ./peptide"
             ]
             
@@ -290,6 +320,9 @@ class PeptideOptimizer:
         chains_to_design = "A"
         
         for i in range(1, self.n_poses + 1):
+            progress = 85 + (8 * (i-1) / self.n_poses)  # 85% to 93%
+            self.update_progress(progress, f"Processing complex {i}/{self.n_poses} with ProteinMPNN")
+            
             output_dir = self.pmpnn_dir / f"complex{i}"
             path_for_parsed_chains = output_dir / "parsed_pdbs.jsonl"
             path_for_assigned_chains = output_dir / "assigned_pdbs.jsonl"
@@ -436,18 +469,35 @@ class PeptideOptimizer:
         self.log("Starting peptide optimization pipeline")
         
         try:
+            self.update_progress(35, "Step 1: Modeling peptide structure")
             self.step1_model_peptide()
+            
+            self.update_progress(45, "Step 2: Adding hydrogens to structures")
             self.step2_add_hydrogens()
+            
+            self.update_progress(55, "Step 3: Performing molecular docking")
             self.step3_docking()
+            
+            self.update_progress(65, "Step 4: Sorting atoms in structures")
             self.step4_sort_atoms()
+            
+            self.update_progress(70, "Step 5: Scoring binding affinity")
             self.step5_score_binding()
+            
+            self.update_progress(75, "Step 6: Merging peptide structures")
             self.step6_merge_structures()
+            
+            self.update_progress(85, "Step 7: ProteinMPNN sequence optimization")
             self.step7_proteinmpnn_optimization()
+            
+            self.update_progress(95, "Step 8: Final analysis and reporting")
             self.step8_final_analysis()
             
             # 清理中间文件
+            self.update_progress(98, "Cleaning up intermediate files")
             self.cleanup_intermediate_files()
             
+            self.update_progress(100, "Peptide optimization completed successfully!")
             self.log("Peptide optimization pipeline completed successfully!")
             
         except Exception as e:

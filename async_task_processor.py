@@ -21,18 +21,29 @@ logger = logging.getLogger("async_task_processor")
 class TaskProgressCallback:
     """任务进度回调类"""
     
-    def __init__(self, task_id: str, connection):
+    def __init__(self, task_id: str, connection, processor):
         self.task_id = task_id
         self.connection = connection
+        self.processor = processor
         self._is_completed = False
         
-    async def update_progress(self, progress: float, info: str = None):
+    async def update_progress(self, progress: float, info: str = None, step_name: str = None, step_progress: float = None):
         """更新任务进度"""
         if self._is_completed:
             logger.debug("Task %s already completed, skipping progress update", self.task_id)
             return
             
         try:
+            # 更新内存中的进度信息
+            self.processor.task_progress[self.task_id] = {
+                "overall_progress": progress,
+                "current_step": step_name or info or "Processing...",
+                "step_progress": step_progress,
+                "details": info,
+                "status": "processing",
+                "last_updated": time.time()
+            }
+            
             # 更新数据库中的任务状态 - 只更新状态，不包含progress和info字段
             async with self.connection.cursor() as cursor:
                 await cursor.execute(
@@ -42,7 +53,7 @@ class TaskProgressCallback:
                 await self.connection.commit()
                 
             logger.info("Task %s progress: %.1f%% - %s", 
-                        self.task_id, progress, info or "")
+                        self.task_id, progress, step_name or info or "")
         except Exception as e:
             logger.error("Failed to update progress for task %s: %s", self.task_id, e)
     
@@ -59,6 +70,7 @@ class AsyncTaskProcessor:
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
         self.process_executor = ProcessPoolExecutor(max_workers=max_workers)
         self.active_tasks: Dict[str, asyncio.Task] = {}
+        self.task_progress: Dict[str, Dict[str, Any]] = {}  # 存储任务进度信息
         self.is_running = True
         self.polling_task = None
         
@@ -135,7 +147,7 @@ class AsyncTaskProcessor:
                 raise Exception("Failed to connect to database")
             
             # 创建进度回调
-            progress_callback = TaskProgressCallback(task_id, connection)
+            progress_callback = TaskProgressCallback(task_id, connection, self)
             
             # 更新任务状态为处理中
             await progress_callback.update_progress(0, "Starting peptide optimization")
@@ -166,11 +178,24 @@ class AsyncTaskProcessor:
                 
                 # 创建优化器 - 传递目录路径而不是文件路径
                 await progress_callback.update_progress(20, "Initializing optimizer")
+                
+                # 创建一个同步的进度回调函数
+                def sync_progress_callback(progress, message):
+                    # 这个函数会在同步上下文中被调用，我们需要记录进度
+                    # 由于在线程池中运行，我们只记录日志，实际的数据库更新由主循环处理
+                    logger.info(f"Task {task_id} progress: {progress:.1f}% - {message}")
+                
+                # 获取peptide_opt根目录的绝对路径
+                peptide_opt_root = os.path.dirname(os.path.abspath(__file__))
+                proteinmpnn_path = os.path.join(peptide_opt_root, "ProteinMPNN")
+                
                 optimizer = PeptideOptimizer(
                     input_dir=input_dir,
                     output_dir=os.path.join(job_dir, "output"),
+                    proteinmpnn_dir=proteinmpnn_path,  # 使用绝对路径
                     cores=12,  # 可以从配置文件读取
-                    cleanup=True
+                    cleanup=True,
+                    progress_callback=sync_progress_callback
                 )
                 
                 # 执行优化步骤
@@ -195,12 +220,32 @@ class AsyncTaskProcessor:
                 progress_callback.mark_completed()
                 logger.info("Task %s completed successfully", task_id)
                 
+                # 更新进度信息为完成状态
+                self.task_progress[task_id] = {
+                    "overall_progress": 100,
+                    "current_step": "Completed",
+                    "step_progress": 100,
+                    "details": "Optimization completed successfully",
+                    "status": "finished",
+                    "last_updated": time.time()
+                }
+                
             finally:
                 # 恢复原始工作目录
                 os.chdir(original_cwd)
                 
         except Exception as e:
             logger.error("Task %s failed: %s", task_id, str(e))
+            
+            # 更新进度信息为失败状态
+            self.task_progress[task_id] = {
+                "overall_progress": 0,
+                "current_step": "Failed",
+                "step_progress": 0,
+                "details": f"Task failed: {str(e)}",
+                "status": "failed",
+                "last_updated": time.time()
+            }
             
             if connection:
                 try:
@@ -289,6 +334,14 @@ class AsyncTaskProcessor:
     def get_task_count(self) -> int:
         """获取活动任务数量"""
         return len(self.active_tasks)
+    
+    def get_task_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """获取特定任务的进度信息"""
+        return self.task_progress.get(task_id)
+    
+    def get_all_tasks_progress(self) -> Dict[str, Dict[str, Any]]:
+        """获取所有任务的进度信息"""
+        return self.task_progress.copy()
     
     async def shutdown(self):
         """关闭任务处理器"""
