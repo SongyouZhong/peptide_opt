@@ -291,7 +291,7 @@ class AsyncTaskProcessor:
                 
                 await progress_callback.update_progress(90, "Finalizing results")
                 
-                # 更新数据库为完成状态
+                # 更新数据库为完成状态 - 使用NOW()确保时区一致
                 async with connection.cursor() as cursor:
                     await cursor.execute(
                         """UPDATE tasks 
