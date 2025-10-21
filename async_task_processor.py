@@ -137,6 +137,35 @@ class AsyncTaskProcessor:
             logger.error(f"数据库连接失败: {e}")
             return None
     
+    async def _read_task_config(self, job_dir: str) -> Dict[str, Any]:
+        """读取任务配置文件"""
+        config_path = os.path.join(job_dir, "optimization_config.txt")
+        config = {}
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if '=' in line and not line.startswith('#'):
+                            key, value = line.split('=', 1)
+                            # 尝试转换数据类型
+                            if value.lower() in ('true', 'false'):
+                                config[key] = value.lower() == 'true'
+                            elif value.isdigit():
+                                config[key] = int(value)
+                            elif value.replace('.', '').isdigit():
+                                config[key] = float(value)
+                            else:
+                                config[key] = value
+                logger.info("Loaded task config for job %s: %s", job_dir, config)
+            except Exception as e:
+                logger.error("Failed to read config file %s: %s", config_path, e)
+        else:
+            logger.warning("Config file not found at %s, using default values", config_path)
+        
+        return config
+    
     async def process_peptide_optimization_task(self, task_id: str, job_dir: str):
         """处理肽段优化任务"""
         connection = None
@@ -176,8 +205,60 @@ class AsyncTaskProcessor:
                 if not validate_pdb_file(pdb_file):
                     raise ValueError("Invalid PDB file format")
                 
+                # 读取任务配置
+                await progress_callback.update_progress(20, "Reading task configuration")
+                config = await self._read_task_config(job_dir)
+                
+                # 读取peptide序列以计算长度和其他参数
+                fasta_file = os.path.join(input_dir, "peptide.fasta")
+                peptide_sequence = ""
+                peptide_length = 0
+                if os.path.exists(fasta_file):
+                    with open(fasta_file, 'r') as f:
+                        lines = f.readlines()
+                        if len(lines) > 1:
+                            peptide_sequence = lines[1].strip()
+                            peptide_length = len(peptide_sequence)
+                
+                # 计算复杂度因子和计算单元
+                n_iterations = config.get('n_iterations', 5)
+                n_rosetta_runs = config.get('n_rosetta_runs', 20)
+                total_calculations = n_iterations * n_rosetta_runs
+                complexity_factor = (peptide_length / 10) ** 1.5 if peptide_length > 0 else 1.0
+                total_compute_units = total_calculations * complexity_factor
+                
+                # 输出完整的优化参数信息到日志
+                logger.info("=== PEPTIDE OPTIMIZATION PARAMETERS ===")
+                logger.info("Task ID: %s", task_id)
+                logger.info("Job Directory: %s", job_dir)
+                logger.info("")
+                logger.info("--- Peptide Sequence Parameters ---")
+                logger.info("Peptide Sequence: %s", peptide_sequence or config.get('peptide_sequence', 'N/A'))
+                logger.info("Peptide Length: %d amino acids", peptide_length or len(config.get('peptide_sequence', '')))
+                logger.info("Receptor PDB Filename: %s", config.get('receptor_pdb_filename', 'N/A'))
+                logger.info("")
+                logger.info("--- Optimization Parameters ---")
+                logger.info("Number of Iterations: %d", n_iterations)
+                logger.info("Rosetta Runs per Iteration: %d", n_rosetta_runs)
+                logger.info("Number of Docking Poses: %d", config.get('n_poses', 10))
+                logger.info("")
+                logger.info("--- ProteinMPNN Parameters ---")
+                logger.info("Sequences per Target: %d", config.get('num_seq_per_target', 10))
+                logger.info("ProteinMPNN Seed: %d", config.get('proteinmpnn_seed', 37))
+                logger.info("ProteinMPNN Enabled: %s", config.get('proteinmpnn_enabled', True))
+                logger.info("")
+                logger.info("--- Computational Parameters ---")
+                logger.info("CPU Cores: %d", config.get('cores', 12))
+                logger.info("Total Calculations: %d", total_calculations)
+                logger.info("Complexity Factor: %.3f", complexity_factor)
+                logger.info("Total Compute Units: %.2f", total_compute_units)
+                logger.info("")
+                logger.info("--- System Parameters ---")
+                logger.info("Cleanup Intermediate Files: %s", config.get('cleanup', True))
+                logger.info("==========================================")
+                
                 # 创建优化器 - 传递目录路径而不是文件路径
-                await progress_callback.update_progress(20, "Initializing optimizer")
+                await progress_callback.update_progress(25, "Initializing optimizer")
                 
                 # 创建一个同步的进度回调函数
                 def sync_progress_callback(progress, message):
@@ -193,8 +274,11 @@ class AsyncTaskProcessor:
                     input_dir=input_dir,
                     output_dir=os.path.join(job_dir, "output"),
                     proteinmpnn_dir=proteinmpnn_path,  # 使用绝对路径
-                    cores=12,  # 可以从配置文件读取
-                    cleanup=True,
+                    cores=config.get('cores', 12),
+                    cleanup=config.get('cleanup', True),
+                    n_poses=config.get('n_poses', 10),
+                    num_seq_per_target=config.get('num_seq_per_target', 10),
+                    proteinmpnn_seed=config.get('proteinmpnn_seed', 37),
                     progress_callback=sync_progress_callback
                 )
                 

@@ -55,6 +55,18 @@ class PeptideOptimizer:
         self.output_dir.mkdir(exist_ok=True)
         self.middle_dir.mkdir(exist_ok=True)
         
+        # 输出初始化参数到日志
+        self.log("=== PEPTIDE OPTIMIZER INITIALIZATION ===")
+        self.log(f"Input Directory: {self.input_dir}")
+        self.log(f"Output Directory: {self.output_dir}")
+        self.log(f"ProteinMPNN Directory: {self.proteinmpnn_dir}")
+        self.log(f"CPU Cores: {self.cores}")
+        self.log(f"Number of Docking Poses: {self.n_poses}")
+        self.log(f"ProteinMPNN Sequences per Target: {self.num_seq_per_target}")
+        self.log(f"ProteinMPNN Random Seed: {self.proteinmpnn_seed}")
+        self.log(f"Cleanup Intermediate Files: {self.cleanup}")
+        self.log("==========================================")
+        
     def log(self, message):
         """日志输出"""
         print(f"[PeptideOptimizer] {message}")
@@ -467,6 +479,36 @@ class PeptideOptimizer:
     def run_full_pipeline(self):
         """运行完整的肽段优化流程"""
         self.log("Starting peptide optimization pipeline")
+        
+        # 读取peptide序列信息用于完整参数输出
+        try:
+            peptide_fasta = self.input_dir / "peptide.fasta"
+            peptide_sequence = ""
+            if peptide_fasta.exists():
+                with open(peptide_fasta, 'r') as f:
+                    lines = f.readlines()
+                    if len(lines) > 1:
+                        peptide_sequence = lines[1].strip()
+            
+            # 输出完整的优化任务参数
+            self.log("=== PEPTIDE OPTIMIZATION TASK PARAMETERS ===")
+            self.log(f"Peptide Sequence: {peptide_sequence}")
+            self.log(f"Peptide Length: {len(peptide_sequence)} amino acids")
+            self.log(f"Number of Docking Poses: {self.n_poses}")
+            self.log(f"ProteinMPNN Sequences per Target: {self.num_seq_per_target}")
+            self.log(f"ProteinMPNN Random Seed: {self.proteinmpnn_seed}")
+            self.log(f"CPU Cores for Processing: {self.cores}")
+            self.log(f"Cleanup Intermediate Files: {self.cleanup}")
+            
+            # 检查是否有受体蛋白文件信息
+            receptor_files = list(self.input_dir.glob("*.pdb"))
+            if receptor_files:
+                self.log(f"Receptor PDB File: {receptor_files[0].name}")
+            
+            self.log("============================================")
+            
+        except Exception as e:
+            self.log(f"Warning: Could not read peptide sequence information: {e}")
         
         try:
             self.update_progress(35, "Step 1: Modeling peptide structure")
