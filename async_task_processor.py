@@ -295,7 +295,7 @@ class AsyncTaskProcessor:
                 async with connection.cursor() as cursor:
                     await cursor.execute(
                         """UPDATE tasks 
-                           SET status = %s 
+                           SET status = %s, finished_at = NOW()
                            WHERE id = %s""",
                         ("finished", task_id)
                     )
@@ -335,7 +335,7 @@ class AsyncTaskProcessor:
                 try:
                     async with connection.cursor() as cursor:
                         await cursor.execute(
-                            "UPDATE tasks SET status = %s WHERE id = %s",
+                            "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
                             ("failed", task_id)
                         )
                         await connection.commit()
@@ -396,7 +396,7 @@ class AsyncTaskProcessor:
                 try:
                     async with connection.cursor() as cursor:
                         await cursor.execute(
-                            "UPDATE tasks SET status = %s WHERE id = %s",
+                            "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
                             ("cancelled", task_id)
                         )
                         await connection.commit()
