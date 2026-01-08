@@ -26,9 +26,10 @@ class PeptideOptimizer:
                  proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True,
                  n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37,
                  progress_callback=None):
-        self.input_dir = Path(input_dir)
-        self.output_dir = Path(output_dir)
-        self.proteinmpnn_dir = Path(proteinmpnn_dir)
+        # 确保所有路径都是绝对路径
+        self.input_dir = Path(input_dir).resolve()
+        self.output_dir = Path(output_dir).resolve()
+        self.proteinmpnn_dir = Path(proteinmpnn_dir).resolve()
         self.cores = cores
         self.cleanup = cleanup  # 是否清理中间文件
         self.progress_callback = progress_callback  # 进度回调函数
@@ -38,8 +39,9 @@ class PeptideOptimizer:
         self.num_seq_per_target = num_seq_per_target  # ProteinMPNN每个目标生成的序列数
         self.proteinmpnn_seed = proteinmpnn_seed  # ProteinMPNN随机数种子
         
-        # 中间文件目录
-        self.middle_dir = Path("./middlefiles")
+        # 中间文件目录 - 使用output_dir的父目录来存放中间文件，确保使用绝对路径
+        self.middle_dir = Path(output_dir).parent / "middlefiles"
+        self.middle_dir = self.middle_dir.resolve()  # 转换为绝对路径
         self.pmpnn_dir = self.middle_dir / "pmpnn"
         
         # Hopp-Woods hydrophilicity scale
@@ -59,6 +61,7 @@ class PeptideOptimizer:
         self.log("=== PEPTIDE OPTIMIZER INITIALIZATION ===")
         self.log(f"Input Directory: {self.input_dir}")
         self.log(f"Output Directory: {self.output_dir}")
+        self.log(f"Middle Files Directory: {self.middle_dir}")
         self.log(f"ProteinMPNN Directory: {self.proteinmpnn_dir}")
         self.log(f"CPU Cores: {self.cores}")
         self.log(f"Number of Docking Poses: {self.n_poses}")

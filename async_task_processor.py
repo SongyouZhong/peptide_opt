@@ -1,6 +1,7 @@
 """
 肽段优化异步任务处理器
 支持并发处理和进度更新
+使用 PostgreSQL 数据库和 SeaweedFS 对象存储
 """
 
 import asyncio
@@ -11,9 +12,11 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import aiomysql
+import asyncpg
 from peptide_optimizer import PeptideOptimizer
 from utils import validate_fasta_file, validate_pdb_file
+from config.settings import database, storage as storage_config, task_processor as task_config
+from services import get_storage
 
 logger = logging.getLogger("async_task_processor")
 
@@ -44,13 +47,11 @@ class TaskProgressCallback:
                 "last_updated": time.time()
             }
             
-            # 更新数据库中的任务状态 - 只更新状态，不包含progress和info字段
-            async with self.connection.cursor() as cursor:
-                await cursor.execute(
-                    "UPDATE tasks SET status = %s WHERE id = %s",
-                    ("processing", self.task_id)
-                )
-                await self.connection.commit()
+            # 更新数据库中的任务状态 (asyncpg 语法)
+            await self.connection.execute(
+                "UPDATE tasks SET status = $1 WHERE id = $2",
+                "processing", self.task_id
+            )
                 
             logger.info("Task %s progress: %.1f%% - %s", 
                         self.task_id, progress, step_name or info or "")
@@ -65,77 +66,99 @@ class TaskProgressCallback:
 class AsyncTaskProcessor:
     """异步任务处理器"""
     
-    def __init__(self, max_workers: int = 2):
-        self.max_workers = max_workers
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.process_executor = ProcessPoolExecutor(max_workers=max_workers)
+    def __init__(self, max_workers: int = None):
+        self.max_workers = max_workers or task_config.max_workers
+        self.poll_interval = task_config.poll_interval
+        self.thread_executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        self.process_executor = ProcessPoolExecutor(max_workers=self.max_workers)
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.task_progress: Dict[str, Dict[str, Any]] = {}  # 存储任务进度信息
         self.is_running = True
         self.polling_task = None
+        self._db_pool: Optional[asyncpg.Pool] = None
         
-        # 数据库配置
+        # 数据库配置（从配置模块读取）
         self.db_config = {
-            'host': '127.0.0.1',
-            'user': 'vina_user',
-            'password': 'Aa7758258123',
-            'db': 'project1',
-            'charset': 'utf8mb4',
-            'autocommit': True
+            'host': database.host,
+            'port': database.port,
+            'user': database.user,
+            'password': database.password,
+            'database': database.database,
         }
         
-        logger.info("AsyncTaskProcessor initialized with %d workers", max_workers)
+        logger.info("AsyncTaskProcessor initialized with %d workers", self.max_workers)
     
     async def start_polling(self):
         """启动数据库轮询"""
         if self.polling_task is None:
+            # 初始化数据库连接池
+            await self._init_db_pool()
             logger.info("Starting database polling for peptide optimization tasks...")
             self.polling_task = asyncio.create_task(self._poll_database_tasks())
+    
+    async def _init_db_pool(self):
+        """初始化数据库连接池"""
+        if self._db_pool is None:
+            try:
+                logger.info("Creating PostgreSQL connection pool...")
+                self._db_pool = await asyncpg.create_pool(
+                    host=self.db_config['host'],
+                    port=self.db_config['port'],
+                    user=self.db_config['user'],
+                    password=self.db_config['password'],
+                    database=self.db_config['database'],
+                    min_size=1,
+                    max_size=5,
+                )
+                logger.info("PostgreSQL connection pool created successfully")
+            except Exception as e:
+                logger.error(f"Failed to create database pool: {e}")
+                raise
     
     async def _poll_database_tasks(self):
         """定时从数据库获取待处理的peptide优化任务"""
         while self.is_running:
             try:
-                connection = await self.get_db_connection()
-                if connection:
-                    try:
-                        async with connection.cursor() as cursor:
-                            # 查询状态为pending的peptide_optimization任务
-                            await cursor.execute(
-                                "SELECT id, job_dir FROM tasks WHERE task_type = 'peptide_optimization' AND status = 'pending' LIMIT 5"
-                            )
-                            pending_tasks = await cursor.fetchall()
-                            
-                            if pending_tasks:
-                                logger.info(f"Found {len(pending_tasks)} pending peptide optimization tasks")
-                                
-                            for task in pending_tasks:
-                                task_id, job_dir = task
-                                # 检查任务是否已在处理中
-                                if task_id not in self.active_tasks:
-                                    logger.info(f"Submitting peptide optimization task: {task_id}")
-                                    await self.submit_task(task_id, job_dir)
-                                else:
-                                    logger.debug(f"Task {task_id} already in progress, skipping")
-                    finally:
-                        connection.close()
+                async with self._db_pool.acquire() as connection:
+                    # 查询状态为pending的peptide_optimization任务
+                    pending_tasks = await connection.fetch(
+                        "SELECT id, job_dir FROM tasks WHERE task_type = 'peptide_optimization' AND status = 'pending' LIMIT 5"
+                    )
+                    
+                    if pending_tasks:
+                        logger.info(f"Found {len(pending_tasks)} pending peptide optimization tasks")
+                        
+                    for task in pending_tasks:
+                        task_id, job_dir = task['id'], task['job_dir']
+                        # 检查任务是否已在处理中
+                        if task_id not in self.active_tasks:
+                            logger.info(f"Submitting peptide optimization task: {task_id}")
+                            await self.submit_task(task_id, job_dir)
+                        else:
+                            logger.debug(f"Task {task_id} already in progress, skipping")
                         
             except Exception as e:
                 logger.error(f"Error polling database for tasks: {e}")
             
-            # 等待30秒后再次轮询
-            await asyncio.sleep(30)
+            # 等待指定间隔后再次轮询
+            await asyncio.sleep(self.poll_interval)
         
         logger.info("Database polling stopped")
     
     async def get_db_connection(self):
-        """获取数据库连接"""
+        """从连接池获取数据库连接"""
         try:
-            connection = await aiomysql.connect(**self.db_config)
-            return connection
+            if self._db_pool is None:
+                await self._init_db_pool()
+            return await self._db_pool.acquire()
         except Exception as e:
             logger.error(f"数据库连接失败: {e}")
             return None
+    
+    async def release_db_connection(self, connection):
+        """释放数据库连接回连接池"""
+        if connection and self._db_pool:
+            await self._db_pool.release(connection)
     
     async def _read_task_config(self, job_dir: str) -> Dict[str, Any]:
         """读取任务配置文件"""
@@ -291,15 +314,15 @@ class AsyncTaskProcessor:
                 
                 await progress_callback.update_progress(90, "Finalizing results")
                 
-                # 更新数据库为完成状态 - 使用NOW()确保时区一致
-                async with connection.cursor() as cursor:
-                    await cursor.execute(
-                        """UPDATE tasks 
-                           SET status = %s, finished_at = NOW()
-                           WHERE id = %s""",
-                        ("finished", task_id)
-                    )
-                    await connection.commit()
+                # 上传结果到 SeaweedFS
+                await progress_callback.update_progress(92, "Uploading results to storage")
+                await self._upload_results_to_storage(task_id, job_dir)
+                
+                # 更新数据库为完成状态 (asyncpg 语法)
+                await connection.execute(
+                    "UPDATE tasks SET status = $1, finished_at = NOW() WHERE id = $2",
+                    "finished", task_id
+                )
                 
                 progress_callback.mark_completed()
                 logger.info("Task %s completed successfully", task_id)
@@ -333,18 +356,16 @@ class AsyncTaskProcessor:
             
             if connection:
                 try:
-                    async with connection.cursor() as cursor:
-                        await cursor.execute(
-                            "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
-                            ("failed", task_id)
-                        )
-                        await connection.commit()
+                    await connection.execute(
+                        "UPDATE tasks SET status = $1, finished_at = NOW() WHERE id = $2",
+                        "failed", task_id
+                    )
                 except Exception as db_error:
                     logger.error("Failed to update task status in database: %s", db_error)
         
         finally:
             if connection:
-                connection.close()
+                await self.release_db_connection(connection)
             
             # 从活动任务中移除
             if task_id in self.active_tasks:
@@ -390,18 +411,16 @@ class AsyncTaskProcessor:
             except asyncio.CancelledError:
                 pass
             
-            # 更新数据库状态
+            # 更新数据库状态 (asyncpg 语法)
             connection = await self.get_db_connection()
             if connection:
                 try:
-                    async with connection.cursor() as cursor:
-                        await cursor.execute(
-                            "UPDATE tasks SET status = %s, finished_at = NOW() WHERE id = %s",
-                            ("cancelled", task_id)
-                        )
-                        await connection.commit()
+                    await connection.execute(
+                        "UPDATE tasks SET status = $1, finished_at = NOW() WHERE id = $2",
+                        "cancelled", task_id
+                    )
                 finally:
-                    connection.close()
+                    await self.release_db_connection(connection)
             
             del self.active_tasks[task_id]
             logger.info("Task %s cancelled successfully", task_id)
@@ -450,8 +469,41 @@ class AsyncTaskProcessor:
         if self.active_tasks:
             await asyncio.gather(*self.active_tasks.values(), return_exceptions=True)
         
+        # 关闭数据库连接池
+        if self._db_pool:
+            logger.info("Closing database connection pool...")
+            await self._db_pool.close()
+            self._db_pool = None
+        
         # 关闭执行器
         self.thread_executor.shutdown(wait=True)
         self.process_executor.shutdown(wait=True)
         
         logger.info("AsyncTaskProcessor shutdown complete")
+    
+    async def _upload_results_to_storage(self, task_id: str, job_dir: str):
+        """上传任务结果到 SeaweedFS"""
+        try:
+            storage = get_storage()
+            output_dir = Path(job_dir) / "output"
+            
+            if not output_dir.exists():
+                logger.warning("Output directory not found: %s", output_dir)
+                return
+            
+            uploaded_count = 0
+            for file_path in output_dir.rglob("*"):
+                if file_path.is_file():
+                    relative_path = file_path.relative_to(output_dir)
+                    remote_key = f"tasks/{task_id}/peptide/output/{relative_path}"
+                    try:
+                        await storage.upload_file(file_path, remote_key)
+                        uploaded_count += 1
+                    except Exception as e:
+                        logger.error("Failed to upload file %s: %s", file_path, e)
+            
+            logger.info("Uploaded %d files to SeaweedFS for task %s", uploaded_count, task_id)
+            
+        except Exception as e:
+            logger.error("Failed to upload results to storage for task %s: %s", task_id, e)
+            # 不抛出异常，允许任务继续完成

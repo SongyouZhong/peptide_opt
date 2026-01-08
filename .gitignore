@@ -4,3 +4,4 @@
 /output
 /middlefiles
 /__pycache__
+*.pyc

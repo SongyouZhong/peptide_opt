@@ -62,6 +62,12 @@ def setup_logging(level: str = "INFO", log_file: str = None):
 
 def get_log_file_path():
     """获取默认日志文件路径"""
-    log_dir = Path("/home/davis/projects/serverlogs")
+    import os
+    log_dir = Path(os.environ.get("LOG_DIR", "/var/log/peptide_opt"))
     log_dir.mkdir(parents=True, exist_ok=True)
     return str(log_dir / "peptide_opt.log")
+
+
+def get_module_logger(module_name: str):
+    """获取模块日志器"""
+    return logging.getLogger(module_name)
