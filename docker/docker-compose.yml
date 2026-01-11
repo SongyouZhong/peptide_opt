@@ -1,0 +1,116 @@
+# Peptide Optimization Service - Docker Compose
+# ==============================================
+
+version: '3.8'
+
+services:
+  # Main application service
+  peptide-opt:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: peptide-opt:latest
+    container_name: peptide-opt
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-admin}
+      - DB_PASSWORD=${DB_PASSWORD:-secret}
+      - DB_NAME=${DB_NAME:-peptide_opt}
+      - SEAWEED_FILER_ENDPOINT=http://seaweedfs-filer:8888
+      - SEAWEED_BUCKET=${SEAWEED_BUCKET:-peptide-opt}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_WORKERS=${MAX_WORKERS:-2}
+      - POLL_INTERVAL=${POLL_INTERVAL:-30}
+    volumes:
+      - peptide-data:/app/data
+      - peptide-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs-filer:
+        condition: service_started
+    networks:
+      - peptide-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: peptide-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-admin}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
+      - POSTGRES_DB=${DB_NAME:-peptide_opt}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - peptide-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-peptide_opt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SeaweedFS Master
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs-master
+    restart: unless-stopped
+    command: "master -ip=seaweedfs-master -volumeSizeLimitMB=1024"
+    ports:
+      - "9333:9333"
+    volumes:
+      - seaweed-master:/data
+    networks:
+      - peptide-network
+
+  # SeaweedFS Volume Server
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs-volume
+    restart: unless-stopped
+    command: "volume -mserver=seaweedfs-master:9333 -ip=seaweedfs-volume -port=8080"
+    depends_on:
+      - seaweedfs-master
+    volumes:
+      - seaweed-volume:/data
+    networks:
+      - peptide-network
+
+  # SeaweedFS Filer
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs-filer
+    restart: unless-stopped
+    command: "filer -master=seaweedfs-master:9333 -ip=seaweedfs-filer"
+    ports:
+      - "8888:8888"
+    depends_on:
+      - seaweedfs-master
+      - seaweedfs-volume
+    volumes:
+      - seaweed-filer:/data
+    networks:
+      - peptide-network
+
+volumes:
+  peptide-data:
+  peptide-logs:
+  postgres-data:
+  seaweed-master:
+  seaweed-volume:
+  seaweed-filer:
+
+networks:
+  peptide-network:
+    driver: bridge

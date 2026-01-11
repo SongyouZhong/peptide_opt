@@ -1,0 +1,91 @@
+# Docker 构建忽略文件
+
+# Git 相关
+.git
+.gitignore
+.gitattributes
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/
+
+# 日志文件
+*.log
+logs/
+*.log.*
+
+# 输出和临时文件
+output/
+output_test/
+input/*.pdb
+input/*.fasta
+/tmp/
+*.tmp
+*.temp
+
+# 测试文件
+test/
+tests/
+test_*.py
+*_test.py
+conftest.py
+
+# 文档
+docs/
+*.md
+!README.md
+
+# CI/CD 配置
+cicd/
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Docker 相关（避免嵌套）
+Dockerfile*
+docker-compose*.yml
+.docker/
+
+# 环境配置
+.env
+.env.*
+!.env.docker
+
+# 模型权重的测试输出（保留权重文件本身）
+ProteinMPNN/outputs/
+ProteinMPNN/colab_notebooks/
+ProteinMPNN/training/
+ProteinMPNN/examples/
+ProteinMPNN/inputs/
+ProteinMPNN/.git/
+
+# 其他
+*.bak
+*.backup
+.DS_Store
+Thumbs.db
+*.pid

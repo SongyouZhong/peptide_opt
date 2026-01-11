@@ -1,75 +1,161 @@
-StanleyCurtis200268: 请分析我的代码，如果使用命令行参数来调用这个方法，我需要提供什么参数，请你提供示例
+# Peptide Optimization Service
 
-GitHub Copilot: 分析你的代码后，这是一个肽段优化流程的python3脚本。以下是命令行参数的详细说明和使用示例：
+肽段结构优化和序列设计服务，使用 ProteinMPNN 和分子对接技术。
 
-## 命令行参数说明
+## 📋 功能特性
 
-- `--input_dir`: 输入目录（默认: input）
-- `--output_dir`: 输出目录（默认: output）
-- `--proteinmpnn_dir`: ProteinMPNN目录（默认: ProteinMPNN）
-- `--cores`: 对接使用的CPU核心数（默认: 12）
-- `--step`: 运行特定步骤（1-8），可选参数
-- `--no-cleanup`: 保留中间文件，用于调试
+- 🧬 使用 OmegaFold 进行肽段结构预测
+- 🔬 分子对接和结合亲和力评分
+- 🧪 使用 ProteinMPNN 进行序列优化
+- 📊 性质分析和报告生成
+- 🚀 异步任务处理
+- 🗄️ PostgreSQL 数据库支持
+- 📦 SeaweedFS 对象存储
 
-## 使用示例
+## 🚀 快速开始
 
-### 1. 运行完整流程（默认参数）
+### 安装
+
 ```bash
-python3 peptide_optimizer.py
+# 克隆仓库
+git clone https://github.com/yourusername/peptide-opt.git
+cd peptide-opt
+
+# 创建虚拟环境
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# 安装依赖
+pip install -e ".[dev]"
 ```
 
-### 2. 自定义目录和核心数
+### 运行
+
+#### 1. 启动 API 服务
+
 ```bash
-python3 peptide_optimizer.py --input_dir ./my_input --output_dir ./my_output --cores 8
+# 使用命令行工具
+peptide-opt serve --host 0.0.0.0 --port 8000
+
+# 或使用 python -m
+python -m peptide_opt serve
 ```
 
-### 3. 指定ProteinMPNN路径
+#### 2. 直接运行优化
+
 ```bash
-python3 peptide_optimizer.py --proteinmpnn_dir /path/to/ProteinMPNN/ --cores 16
-```
+# 运行完整优化流程
+peptide-opt run --input-dir ./data/input --output-dir ./data/output
 
-### 4. 运行特定步骤
-```bash
-# 只运行步骤1（结构预测）
-python3 peptide_optimizer.py --step 1
-
-# 只运行步骤3（分子对接）
-python3 peptide_optimizer.py --step 3 --cores 8
-
-# 只运行步骤8（最终分析）
-python3 peptide_optimizer.py --step 8 --input_dir ./custom_input
-```
-
-### 5. 保留中间文件用于调试
-```bash
-python3 peptide_optimizer.py --no-cleanup --cores 8
-```
-
-### 6. 完整参数示例
-```bash
-python3 peptide_optimizer.py \
-    --input_dir ./input_data \
-    --output_dir ./results \
-    --proteinmpnn_dir ./ProteinMPNN/ \
-    --cores 16 \
+# 指定参数
+peptide-opt run \
+    --input-dir ./data/input \
+    --output-dir ./data/output \
+    --cores 8 \
     --no-cleanup
 ```
 
-## 输入文件要求
+### Docker 部署
 
-根据代码分析，输入目录需要包含：
-- `peptide.fasta`: 肽段序列文件
-- `5ffg.pdb`: 受体蛋白质结构文件
+```bash
+# 复制环境变量配置
+cp .env.example .env
+# 编辑 .env 设置数据库密码等
 
-## 8个步骤说明
+# 构建并启动
+cd docker
+docker compose up -d
 
-1. **步骤1**: 使用OmegaFold预测肽段结构
+# 查看日志
+docker compose logs -f peptide-opt
+```
+
+## 📁 项目结构
+
+```
+peptide_opt/
+├── src/peptide_opt/          # 源代码
+│   ├── api/                  # FastAPI 应用
+│   ├── core/                 # 核心业务逻辑
+│   ├── tasks/                # 异步任务处理
+│   ├── db/                   # 数据库层
+│   ├── storage/              # 存储服务
+│   └── config/               # 配置管理
+├── tests/                    # 测试
+├── docker/                   # Docker 配置
+├── docs/                     # 文档
+├── vendor/                   # 第三方依赖 (ProteinMPNN)
+└── data/                     # 数据目录
+```
+
+## 📖 API 文档
+
+启动服务后访问:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## 🔧 配置
+
+配置通过以下方式管理（优先级从高到低）:
+
+1. 环境变量 (`PEPTIDE_*`)
+2. `.env` 文件
+3. `config/settings.yaml`
+
+主要配置项:
+
+```yaml
+# 数据库配置
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=admin
+DB_PASSWORD=secret
+DB_NAME=peptide_opt
+
+# 存储配置
+SEAWEED_FILER_ENDPOINT=http://localhost:8888
+SEAWEED_BUCKET=peptide-opt
+
+# 任务处理器
+MAX_WORKERS=2
+POLL_INTERVAL=30
+```
+
+## 🧪 测试
+
+```bash
+# 运行所有测试
+pytest
+
+# 运行并显示覆盖率
+pytest --cov=src/peptide_opt --cov-report=html
+
+# 运行特定测试
+pytest tests/unit/test_validators.py -v
+```
+
+## 📝 优化流程
+
+1. **步骤1**: 使用 OmegaFold 预测肽段结构
 2. **步骤2**: 添加氢原子到受体和肽段
 3. **步骤3**: 分子对接
 4. **步骤4**: 原子排序和添加氢原子
 5. **步骤5**: 计算结合亲和力评分
 6. **步骤6**: 合并肽段和蛋白质结构
-7. **步骤7**: 使用ProteinMPNN进行序列优化
+7. **步骤7**: 使用 ProteinMPNN 进行序列优化
 8. **步骤8**: 最终分析和报告生成
 
-使用`--step`参数可以单独运行任意步骤，这对于调试或重新运行特定部分很有用。
+## 📂 输入文件要求
+
+输入目录需要包含:
+- `peptide.fasta`: 肽段序列文件
+- `*.pdb`: 受体蛋白质结构文件
+
+## 🤝 贡献
+
+欢迎贡献代码！请查看 [CONTRIBUTING.md](docs/CONTRIBUTING.md)。
+
+## 📄 许可证
+
+MIT License - 详见 [LICENSE](LICENSE)

@@ -1,0 +1,60 @@
+# CI/CD 测试环境
+# 用于自动化测试和持续集成
+
+version: '3.8'
+
+services:
+  # 测试数据库
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: peptide-test-postgres
+    environment:
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=test
+      - POSTGRES_DB=testdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d testdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  # 测试 SeaweedFS
+  test-seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: peptide-test-seaweedfs
+    command: "server -dir=/data -filer -s3"
+    tmpfs:
+      - /data
+
+  # 应用测试
+  peptide-test:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: peptide-test
+    environment:
+      - DB_HOST=test-postgres
+      - DB_PORT=5432
+      - DB_USER=test
+      - DB_PASSWORD=test
+      - DB_NAME=testdb
+      - SEAWEED_FILER_ENDPOINT=http://test-seaweedfs:8888
+      - SEAWEED_BUCKET=test-bucket
+      - LOG_LEVEL=DEBUG
+      - WAIT_FOR_DEPS=true
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-seaweedfs:
+        condition: service_started
+    # 运行测试后退出
+    command: >
+      sh -c "
+        echo 'Waiting for services...' &&
+        sleep 10 &&
+        echo 'Running health check...' &&
+        curl -f http://localhost:8001/health || exit 1 &&
+        echo 'Health check passed!'
+      "
