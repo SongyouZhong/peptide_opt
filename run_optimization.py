@@ -28,20 +28,24 @@ def main():
     if not input_dir.exists():
         print("错误: input 目录不存在")
         sys.exit(1)
-        
+
     peptide_fasta = input_dir / "peptide.fasta"
-    protein_pdb = input_dir / "5ffg.pdb"
-    
+
     if not peptide_fasta.exists():
         print(f"错误: 找不到肽段序列文件 {peptide_fasta}")
         sys.exit(1)
-        
-    if not protein_pdb.exists():
-        print(f"错误: 找不到蛋白质结构文件 {protein_pdb}")
+
+    # 自动检测受体PDB文件
+    pdb_files = list(input_dir.glob("*.pdb")) + list(input_dir.glob("*.pdbqt"))
+    if not pdb_files:
+        print(f"错误: 在 {input_dir} 中找不到受体蛋白质结构文件 (.pdb 或 .pdbqt)")
         sys.exit(1)
+
+    protein_pdb = pdb_files[0]
+    print(f"使用受体文件: {protein_pdb.name}")
     
-    # 创建优化器实例
-    optimizer = PeptideOptimizer(cleanup=True)  # 默认清理中间文件
+    # 创建优化器实例（会自动检测受体文件名）
+    optimizer = PeptideOptimizer(cleanup=True, receptor_pdb_filename=protein_pdb.name)
     
     try:
         # 运行完整流程

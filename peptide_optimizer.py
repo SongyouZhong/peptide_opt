@@ -22,10 +22,10 @@ import copy
 class PeptideOptimizer:
     """肽段优化主类"""
     
-    def __init__(self, input_dir="./input", output_dir="./output", 
+    def __init__(self, input_dir="./input", output_dir="./output",
                  proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True,
                  n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37,
-                 progress_callback=None):
+                 progress_callback=None, receptor_pdb_filename=None):
         # 确保所有路径都是绝对路径
         self.input_dir = Path(input_dir).resolve()
         self.output_dir = Path(output_dir).resolve()
@@ -33,17 +33,19 @@ class PeptideOptimizer:
         self.cores = cores
         self.cleanup = cleanup  # 是否清理中间文件
         self.progress_callback = progress_callback  # 进度回调函数
-        
+
         # 新增参数
         self.n_poses = n_poses  # adcp命令中的-N参数
         self.num_seq_per_target = num_seq_per_target  # ProteinMPNN每个目标生成的序列数
         self.proteinmpnn_seed = proteinmpnn_seed  # ProteinMPNN随机数种子
+        self.receptor_pdb_filename = receptor_pdb_filename  # 受体PDB文件名（动态）
         
+
         # 中间文件目录 - 使用output_dir的父目录来存放中间文件，确保使用绝对路径
         self.middle_dir = Path(output_dir).parent / "middlefiles"
         self.middle_dir = self.middle_dir.resolve()  # 转换为绝对路径
         self.pmpnn_dir = self.middle_dir / "pmpnn"
-        
+
         # Hopp-Woods hydrophilicity scale
         self.hopp_woods = {
             'A': -0.5, 'R': 3.0, 'N': 0.2, 'D': 3.0,
@@ -63,6 +65,7 @@ class PeptideOptimizer:
         self.log(f"Output Directory: {self.output_dir}")
         self.log(f"Middle Files Directory: {self.middle_dir}")
         self.log(f"ProteinMPNN Directory: {self.proteinmpnn_dir}")
+        self.log(f"Receptor PDB Filename: {self.receptor_pdb_filename}")
         self.log(f"CPU Cores: {self.cores}")
         self.log(f"Number of Docking Poses: {self.n_poses}")
         self.log(f"ProteinMPNN Sequences per Target: {self.num_seq_per_target}")
@@ -101,20 +104,20 @@ class PeptideOptimizer:
         if not peptide_fasta.exists():
             raise FileNotFoundError(f"Peptide FASTA file not found: {peptide_fasta}")
             
-        # 输出到中间文件目录
-        command = f"omegafold --model 2 {peptide_fasta} {self.middle_dir}"
-        self.run_command(command, "Predicting peptide structure")
+        # 输出到中间文件目录，使用CPU模式（因为GPU需要较新版本的PyTorch）
+        command = f"omegafold --model 2 --device cpu {peptide_fasta} {self.middle_dir}"
+        self.run_command(command, "Predicting peptide structure (CPU mode)")
         
     def step2_add_hydrogens(self):
         """步骤2: 添加氢原子"""
         self.log("Step 2: Adding hydrogens to receptor and peptide")
-        
+
         # 处理受体蛋白
         class NoHetatmSelect(Select):
             def accept_residue(self, residue):
                 return residue.id[0] == ' '
 
-        input_pdb = self.input_dir / "5ffg.pdb"
+        input_pdb = self.input_dir / self.receptor_pdb_filename
         output_pdb = self.middle_dir / "receptor.pdb"
 
         parser = PDBParser(QUIET=True)
@@ -504,10 +507,8 @@ class PeptideOptimizer:
             self.log(f"Cleanup Intermediate Files: {self.cleanup}")
             
             # 检查是否有受体蛋白文件信息
-            receptor_files = list(self.input_dir.glob("*.pdb"))
-            if receptor_files:
-                self.log(f"Receptor PDB File: {receptor_files[0].name}")
-            
+            self.log(f"Receptor PDB File: {self.receptor_pdb_filename}")
+
             self.log("============================================")
             
         except Exception as e:

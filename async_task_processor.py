@@ -214,23 +214,26 @@ class AsyncTaskProcessor:
                 # 检查必要文件 - 文件在input子目录中
                 input_dir = os.path.join(job_dir, "input")
                 fasta_file = os.path.join(input_dir, "peptide.fasta")
-                pdb_file = os.path.join(input_dir, "5ffg.pdb")
-                
+
+                # 从配置文件读取受体PDB文件名
+                config = await self._read_task_config(job_dir)
+                receptor_filename = config.get('receptor_pdb_filename', '5ffg.pdb')  # 默认值用于向后兼容
+                pdb_file = os.path.join(input_dir, receptor_filename)
+
                 if not os.path.exists(fasta_file):
                     raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
                 if not os.path.exists(pdb_file):
                     raise FileNotFoundError(f"PDB file not found: {pdb_file}")
-                
+
                 # 验证文件格式
                 await progress_callback.update_progress(10, "Validating input files")
                 if not validate_fasta_file(fasta_file):
                     raise ValueError("Invalid FASTA file format")
                 if not validate_pdb_file(pdb_file):
                     raise ValueError("Invalid PDB file format")
-                
+
                 # 读取任务配置
                 await progress_callback.update_progress(20, "Reading task configuration")
-                config = await self._read_task_config(job_dir)
                 
                 # 读取peptide序列以计算长度和其他参数
                 fasta_file = os.path.join(input_dir, "peptide.fasta")
@@ -302,7 +305,8 @@ class AsyncTaskProcessor:
                     n_poses=config.get('n_poses', 10),
                     num_seq_per_target=config.get('num_seq_per_target', 10),
                     proteinmpnn_seed=config.get('proteinmpnn_seed', 37),
-                    progress_callback=sync_progress_callback
+                    progress_callback=sync_progress_callback,
+                    receptor_pdb_filename=config.get('receptor_pdb_filename')  # 传递动态文件名
                 )
                 
                 # 执行优化步骤
