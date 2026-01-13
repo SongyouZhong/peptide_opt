@@ -14,19 +14,85 @@
 
 ## 🚀 快速开始
 
-### 安装
+### 环境要求
+
+- Python 3.10
+- CUDA 11.3 (用于 GPU 加速)
+
+### 依赖软件安装
+
+#### 1. OmegaFold (肽段结构预测)
+
+```bash
+# 方式一：直接安装
+pip install OmegaFold
+
+# 方式二：从 GitHub 安装
+pip install git+https://github.com/HeliXonProtein/OmegaFold
+```
+
+详情参考: https://github.com/HeliXonProtein/OmegaFold
+
+#### 2. AutoDock CrankPep (分子对接)
+
+```bash
+# 下载 ADFRsuite
+wget https://ccsb.scripps.edu/adfr/download/1038/ADFRsuite_Linux-x86_64_1.0.tar.gz
+
+# 解压
+tar zxvf ADFRsuite_Linux-x86_64_1.0.tar.gz
+
+# 安装
+cd ADFRsuite_x86_64Linux_1.0
+./install.sh -d ~/ADFRsuite-1.0 -c 0
+```
+
+详情参考: https://ccsb.scripps.edu/adcp/downloads/
+
+#### 3. AutoDock Vina (结合评分计算)
+
+```bash
+# 方式一：pip 安装
+pip install vina
+
+# 方式二：apt 安装
+sudo apt-get install autodock-vina
+```
+
+#### 4. PyMOL (添加氢原子和突变)
+
+```bash
+conda install -c conda-forge -c schrodinger pymol-bundle
+```
+
+#### 5. BioPython
+
+```bash
+pip install biopython
+```
+
+#### 6. ProteinMPNN (序列优化)
+
+```bash
+# 克隆到 vendor 目录（无需安装）
+git clone https://github.com/dauparas/ProteinMPNN vendor/ProteinMPNN
+```
+
+### 项目安装
 
 ```bash
 # 克隆仓库
 git clone https://github.com/yourusername/peptide-opt.git
 cd peptide-opt
 
-# 创建虚拟环境
+# 方式一：使用 conda 环境（推荐）
+conda env create -f environment.yml
+conda activate peptide
+
+# 方式二：使用 venv
 python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
-
-# 安装依赖
 pip install -e ".[dev]"
 ```
 

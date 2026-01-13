@@ -207,13 +207,11 @@ class StorageSettings:
 @dataclass
 class TaskProcessorSettings:
     """任务处理器配置"""
-    max_workers: int = 2
     poll_interval: int = 30
     
     @classmethod
     def from_config(cls) -> "TaskProcessorSettings":
         return cls(
-            max_workers=int(os.getenv('MAX_WORKERS', get('task_processor', 'max_workers', cls.max_workers))),
             poll_interval=int(os.getenv('POLL_INTERVAL', get('task_processor', 'poll_interval', cls.poll_interval))),
         )
 

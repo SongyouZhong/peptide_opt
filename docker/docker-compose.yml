@@ -1,40 +1,58 @@
-# Peptide Optimization Service - Docker Compose
-# ==============================================
-
-version: '3.8'
-
 services:
-  # Main application service
   peptide-opt:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     image: peptide-opt:latest
     container_name: peptide-opt
-    restart: unless-stopped
+    restart: on-failure:3
+    env_file:
+      - ../.env
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-8002}:8000"
+    
+    # 关键配置：让容器能解析 "host.docker.internal" 到宿主机 IP
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     environment:
-      - DB_HOST=postgres
+      # --- 数据库连接 ---
+      # 指向宿主机，因为 postgres-container 映射了 5432 端口
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
+      # 注意：你需要确认现有的 postgres-container 的用户名密码是否为 admin/secret
+      # 如果不是，请修改这里或使用 .env 文件
       - DB_USER=${DB_USER:-admin}
       - DB_PASSWORD=${DB_PASSWORD:-secret}
-      - DB_NAME=${DB_NAME:-peptide_opt}
-      - SEAWEED_FILER_ENDPOINT=http://seaweedfs-filer:8888
-      - SEAWEED_BUCKET=${SEAWEED_BUCKET:-peptide-opt}
+      - DB_NAME=${DB_NAME:-mydatabase}
+
+      # --- 文件系统连接 ---
+      # 指向宿主机，因为 local_seaweedfs-filer-1 映射了 8888 端口
+      - SEAWEED_FILER_ENDPOINT=http://host.docker.internal:8888
+      # 注意：必须与 AstraMolecula 使用相同的 bucket (astramolecula)
+      - SEAWEED_BUCKET=${SEAWEED_BUCKET:-astramolecula}
+
+      # --- 应用配置 ---
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - MAX_WORKERS=${MAX_WORKERS:-2}
       - POLL_INTERVAL=${POLL_INTERVAL:-30}
+      # - NVIDIA_VISIBLE_DEVICES=all  # GPU 支持已禁用
+
     volumes:
       - peptide-data:/app/data
       - peptide-logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      seaweedfs-filer:
-        condition: service_started
+
     networks:
       - peptide-network
+
+    # GPU 支持（已禁用，如需启用请取消注释）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -42,74 +60,9 @@ services:
       retries: 3
       start_period: 10s
 
-  # PostgreSQL database
-  postgres:
-    image: postgres:15-alpine
-    container_name: peptide-postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${DB_USER:-admin}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
-      - POSTGRES_DB=${DB_NAME:-peptide_opt}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - peptide-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-peptide_opt}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # SeaweedFS Master
-  seaweedfs-master:
-    image: chrislusf/seaweedfs:latest
-    container_name: seaweedfs-master
-    restart: unless-stopped
-    command: "master -ip=seaweedfs-master -volumeSizeLimitMB=1024"
-    ports:
-      - "9333:9333"
-    volumes:
-      - seaweed-master:/data
-    networks:
-      - peptide-network
-
-  # SeaweedFS Volume Server
-  seaweedfs-volume:
-    image: chrislusf/seaweedfs:latest
-    container_name: seaweedfs-volume
-    restart: unless-stopped
-    command: "volume -mserver=seaweedfs-master:9333 -ip=seaweedfs-volume -port=8080"
-    depends_on:
-      - seaweedfs-master
-    volumes:
-      - seaweed-volume:/data
-    networks:
-      - peptide-network
-
-  # SeaweedFS Filer
-  seaweedfs-filer:
-    image: chrislusf/seaweedfs:latest
-    container_name: seaweedfs-filer
-    restart: unless-stopped
-    command: "filer -master=seaweedfs-master:9333 -ip=seaweedfs-filer"
-    ports:
-      - "8888:8888"
-    depends_on:
-      - seaweedfs-master
-      - seaweedfs-volume
-    volumes:
-      - seaweed-filer:/data
-    networks:
-      - peptide-network
-
 volumes:
   peptide-data:
   peptide-logs:
-  postgres-data:
-  seaweed-master:
-  seaweed-volume:
-  seaweed-filer:
 
 networks:
   peptide-network:

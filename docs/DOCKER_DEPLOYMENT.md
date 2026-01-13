@@ -2,13 +2,28 @@
 
 ## 概述
 
-本指南介绍如何使用 Docker 部署 Peptide Optimization 服务。提供了以下几种部署方式：
+本指南介绍如何使用 Docker 部署 Peptide Optimization 服务。
 
-| 部署方式 | 说明 | 适用场景 |
-|---------|------|---------|
-| `docker-compose.yml` | 完整版，包含 PostgreSQL 和 SeaweedFS | 全新部署、测试环境 |
-| `docker-compose.standalone.yml` | 仅应用服务，连接外部依赖 | 已有数据库和存储服务 |
-| `docker-compose.gpu.yml` | GPU 加速版 | 需要 CUDA 加速的场景 |
+### 系统要求
+
+- Docker 20.10+
+- Docker Compose 2.0+
+- NVIDIA GPU + CUDA 11.3+ (用于 OmegaFold 和 PyTorch 加速)
+- nvidia-docker2 / NVIDIA Container Toolkit
+
+### 包含的软件
+
+Docker 镜像已预装以下依赖：
+
+| 软件 | 版本 | 用途 |
+|-----|------|------|
+| Python | 3.10 | 运行环境 |
+| PyTorch | 1.12.0+cu113 | 深度学习框架 |
+| OmegaFold | latest | 肽段结构预测 |
+| ADFRsuite | 1.0 | 分子对接 (AutoDock CrankPep) |
+| AutoDock Vina | 1.2.7 | 结合评分计算 |
+| BioPython | 1.85 | 生物序列处理 |
+| ProteinMPNN | included | 序列优化 |
 
 ## 快速开始
 
@@ -24,6 +39,16 @@ sudo apt-get install docker-compose-plugin
 # 添加当前用户到 docker 组（避免每次使用 sudo）
 sudo usermod -aG docker $USER
 newgrp docker
+
+# 安装 NVIDIA Container Toolkit (GPU 支持)
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt-get update && sudo apt-get install -y nvidia-docker2
+sudo systemctl restart docker
+
+# 验证 GPU 支持
+docker run --rm --gpus all nvidia/cuda:11.3.1-base-ubuntu20.04 nvidia-smi
 ```
 
 ### 2. 配置环境变量

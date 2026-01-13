@@ -58,7 +58,6 @@ storage:
 
 # ============ 任务处理配置 ============
 task_processor:
-  max_workers: 2
   poll_interval: 30
 
 # ============ 日志配置 ============

@@ -11,10 +11,10 @@ dependencies:
   - asyncpg
   - aiohttp
   - pip:
-    # - OmegaFold==0.0.0
+    # torch is installed separately in Dockerfile for CUDA compatibility
+    # OmegaFold is installed separately in Dockerfile
+    # vina is installed separately in Dockerfile
     - biopython==1.85
-    - torch==1.12.0+cu113
-    - vina==1.2.7
     - asyncpg>=0.29.0
     - psycopg2-binary>=2.9.9
     - aiohttp>=3.9.0

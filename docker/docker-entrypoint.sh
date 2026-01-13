@@ -9,6 +9,14 @@ echo "=========================================="
 echo "Starting at: $(date)"
 echo ""
 
+# Initialize conda
+source /opt/conda/etc/profile.d/conda.sh
+conda activate peptide
+
+echo "Using Python: $(which python)"
+echo "Python version: $(python --version)"
+echo ""
+
 # Default command
 CMD=${1:-serve}
 
