@@ -5,6 +5,7 @@
 """
 
 import argparse
+import os
 import sys
 import uvicorn
 
@@ -58,8 +59,8 @@ def main():
     run_parser.add_argument(
         "--cores",
         type=int,
-        default=12,
-        help="Number of CPU cores for docking (default: 12)"
+        default=int(os.getenv("CPU_CORES", "4")),
+        help="Number of CPU cores for docking (default: from CPU_CORES env or 4, ~20%% of host)"
     )
     run_parser.add_argument(
         "--step",

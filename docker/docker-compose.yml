@@ -38,7 +38,17 @@ services:
       # --- 应用配置 ---
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - POLL_INTERVAL=${POLL_INTERVAL:-30}
+      - CPU_CORES=${CPU_CORES:-10}  # 每个实例使用的 CPU 核心数
       # - NVIDIA_VISIBLE_DEVICES=all  # GPU 支持已禁用
+
+    # CPU 资源限制（防止多实例资源竞争）
+    # 每个实例使用宿主机 20% 的 CPU 核心
+    deploy:
+      resources:
+        limits:
+          cpus: '${CPU_LIMIT:-4}'  # 最多使用 4 个核心 (20% of 24)
+        reservations:
+          cpus: '${CPU_RESERVATION:-4}'  # 预留 4 个核心
 
     volumes:
       - peptide-data:/app/data

@@ -561,7 +561,7 @@ def main():
     parser.add_argument('--input_dir', default='./input', help='Input directory')
     parser.add_argument('--output_dir', default='./output', help='Output directory')
     parser.add_argument('--proteinmpnn_dir', default='./ProteinMPNN/', help='ProteinMPNN directory')
-    parser.add_argument('--cores', type=int, default=12, help='Number of CPU cores for docking')
+    parser.add_argument('--cores', type=int, default=4, help='Number of CPU cores for docking (~20%% of host)')
     parser.add_argument('--step', type=int, help='Run only specific step (1-8)')
     parser.add_argument('--no-cleanup', action='store_true', help='Keep intermediate files (useful for debugging)')
     parser.add_argument('--n_poses', type=int, default=10, help='Number of docking poses to generate (adcp -N parameter)')
