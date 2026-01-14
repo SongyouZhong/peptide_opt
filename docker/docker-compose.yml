@@ -4,12 +4,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     image: peptide-opt:latest
-    container_name: peptide-opt
+    # 移除 container_name 以支持多实例部署 (docker compose up --scale peptide-opt=N)
+    # container_name: peptide-opt
     restart: on-failure:3
     env_file:
       - ../.env
-    ports:
-      - "${PORT:-8002}:8000"
+    # 移除固定端口映射，多实例模式下不需要暴露端口（作为worker运行）
+    # 如需API访问，请使用独立的API服务或负载均衡
+    # ports:
+    #   - "${PORT:-8002}:8000"
     
     # 关键配置：让容器能解析 "host.docker.internal" 到宿主机 IP
     extra_hosts:

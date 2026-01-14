@@ -65,7 +65,14 @@ class TaskProgressCallback:
 
 
 class AsyncTaskProcessor:
-    """异步任务处理器"""
+    """
+    异步任务处理器
+    
+    支持多容器 Worker 模式:
+    - 使用数据库行级锁 (SELECT FOR UPDATE SKIP LOCKED) 防止任务重复处理
+    - 每个实例每次只处理一个任务 (max_workers=1)
+    - 支持 docker compose up --scale peptide-opt=N 水平扩展
+    """
     
     def __init__(self):
         task_settings = settings().task_processor
@@ -78,9 +85,11 @@ class AsyncTaskProcessor:
         self.polling_task = None
         self._db_pool: Optional[asyncpg.Pool] = None
         
-        # 线程池执行器，用于运行同步的优化任务
+        # 每个容器实例每次只处理一个任务，便于水平扩展
+        # 使用 docker compose up --scale peptide-opt=N 启动多个实例
         from concurrent.futures import ThreadPoolExecutor
-        self.thread_executor = ThreadPoolExecutor(max_workers=4)
+        self.max_workers = 1  # 单任务模式
+        self.thread_executor = ThreadPoolExecutor(max_workers=self.max_workers)
         
         # 数据库配置
         self.db_config = {
@@ -91,7 +100,12 @@ class AsyncTaskProcessor:
             'database': db_settings.database,
         }
         
-        logger.info("AsyncTaskProcessor initialized")
+        # 生成唯一的 worker ID 用于日志追踪
+        import uuid
+        self.worker_id = str(uuid.uuid4())[:8]
+        
+        logger.info("AsyncTaskProcessor initialized (worker_id=%s, max_workers=%d)", 
+                   self.worker_id, self.max_workers)
     
     async def start_polling(self):
         """启动数据库轮询"""
@@ -120,31 +134,70 @@ class AsyncTaskProcessor:
                 raise
     
     async def _poll_database_tasks(self):
-        """定时从数据库获取待处理的peptide优化任务"""
+        """
+        定时从数据库获取待处理的peptide优化任务
+        
+        使用 SELECT FOR UPDATE SKIP LOCKED 实现行级锁:
+        - 防止多个 worker 同时获取同一个任务
+        - SKIP LOCKED 确保如果任务被锁定，则跳过而不是等待
+        - 每个 worker 每次只获取一个任务 (单任务模式)
+        """
         while self.is_running:
             try:
+                # 如果已有任务在执行，则等待
+                if len(self.active_tasks) >= self.max_workers:
+                    logger.debug("[Worker %s] Already processing %d task(s), waiting...", 
+                                self.worker_id, len(self.active_tasks))
+                    await asyncio.sleep(self.poll_interval)
+                    continue
+                
                 async with self._db_pool.acquire() as connection:
-                    pending_tasks = await connection.fetch(
-                        "SELECT id, job_dir FROM tasks WHERE task_type = 'peptide_optimization' AND status = 'pending' LIMIT 5"
-                    )
-                    
-                    if pending_tasks:
-                        logger.info(f"Found {len(pending_tasks)} pending peptide optimization tasks")
+                    # 使用事务和行级锁获取任务
+                    async with connection.transaction():
+                        # SELECT FOR UPDATE SKIP LOCKED:
+                        # - FOR UPDATE: 锁定选中的行
+                        # - SKIP LOCKED: 跳过已被其他 worker 锁定的行
+                        # - LIMIT 1: 每次只获取一个任务
+                        task = await connection.fetchrow(
+                            """
+                            SELECT id, job_dir 
+                            FROM tasks 
+                            WHERE task_type = 'peptide_optimization' 
+                              AND status = 'pending' 
+                            ORDER BY created_at ASC
+                            LIMIT 1
+                            FOR UPDATE SKIP LOCKED
+                            """
+                        )
                         
-                    for task in pending_tasks:
-                        task_id, job_dir = task['id'], task['job_dir']
-                        if task_id not in self.active_tasks:
-                            logger.info(f"Submitting peptide optimization task: {task_id}")
-                            await self.submit_task(task_id, job_dir)
+                        if task:
+                            task_id, job_dir = task['id'], task['job_dir']
+                            
+                            if task_id not in self.active_tasks:
+                                # 立即将任务状态更新为 processing 并设置 started_at，防止其他 worker 获取
+                                await connection.execute(
+                                    "UPDATE tasks SET status = $1, started_at = NOW() WHERE id = $2",
+                                    "processing", task_id
+                                )
+                                
+                                logger.info("[Worker %s] Claimed task: %s", 
+                                           self.worker_id, task_id)
+                                
+                                # 提交任务到执行队列
+                                await self.submit_task(task_id, job_dir)
+                            else:
+                                logger.debug("[Worker %s] Task %s already in progress, skipping", 
+                                            self.worker_id, task_id)
                         else:
-                            logger.debug(f"Task {task_id} already in progress, skipping")
+                            logger.debug("[Worker %s] No pending tasks available", self.worker_id)
                         
             except Exception as e:
-                logger.error(f"Error polling database for tasks: {e}")
+                logger.error("[Worker %s] Error polling database for tasks: %s", 
+                            self.worker_id, e)
             
             await asyncio.sleep(self.poll_interval)
         
-        logger.info("Database polling stopped")
+        logger.info("[Worker %s] Database polling stopped", self.worker_id)
     
     async def get_db_connection(self):
         """从连接池获取数据库连接"""

@@ -59,16 +59,19 @@ show_help() {
     echo "  clean       清理容器和镜像"
     echo "  shell       进入容器 shell"
     echo "  health      检查服务健康状态"
+    echo "  scale       扩缩容 Worker 实例"
     echo ""
     echo "选项:"
     echo "  --gpu       使用 GPU 版本"
     echo "  --standalone  使用独立模式（连接外部服务）"
+    echo "  --workers N   设置 Worker 实例数量 (默认: 1)"
     echo "  -f          跟随日志输出"
     echo ""
     echo "示例:"
-    echo "  $0 start              # 启动完整服务栈"
+    echo "  $0 start              # 启动 1 个 Worker 实例"
+    echo "  $0 start --workers 3  # 启动 3 个 Worker 实例"
     echo "  $0 start --gpu        # 启动 GPU 版本"
-    echo "  $0 start --standalone # 仅启动应用服务"
+    echo "  $0 scale 5            # 扩展到 5 个 Worker 实例"
     echo "  $0 logs -f            # 查看实时日志"
 }
 
@@ -78,11 +81,11 @@ get_compose_file() {
     local gpu="$2"
     
     if [ "$mode" = "standalone" ]; then
-        echo "docker-compose.standalone.yml"
+        echo "docker/docker-compose.standalone.yml"
     elif [ "$gpu" = "true" ]; then
-        echo "docker-compose.gpu.yml"
+        echo "docker/docker-compose.gpu.yml"
     else
-        echo "docker-compose.yml"
+        echo "docker/docker-compose.yml"
     fi
 }
 
@@ -97,8 +100,8 @@ cmd_start() {
         cp .env.docker .env
     fi
     
-    log "启动服务..."
-    docker compose -f "$compose_file" up -d
+    log "启动 $WORKER_COUNT 个 Worker 实例..."
+    docker compose -f "$compose_file" up -d --scale peptide-opt=$WORKER_COUNT
     
     log "等待服务就绪..."
     sleep 5
@@ -203,6 +206,23 @@ cmd_health() {
     echo ""
 }
 
+# 扩缩容 Worker 实例
+cmd_scale() {
+    local compose_file=$(get_compose_file "$MODE" "$USE_GPU")
+    local target_count="${1:-$WORKER_COUNT}"
+    
+    if ! [[ "$target_count" =~ ^[0-9]+$ ]] || [ "$target_count" -lt 1 ]; then
+        error "Worker 实例数量必须是正整数"
+    fi
+    
+    log "扩缩容到 $target_count 个 Worker 实例..."
+    docker compose -f "$compose_file" up -d --scale peptide-opt=$target_count --no-recreate
+    
+    log "等待服务就绪..."
+    sleep 3
+    cmd_status
+}
+
 # 主函数
 main() {
     check_docker
@@ -212,12 +232,22 @@ main() {
     USE_GPU="false"
     MODE="full"
     FOLLOW_LOGS="false"
+    WORKER_COUNT=1
+    SCALE_TARGET=""
     
     while [[ $# -gt 0 ]]; do
         case $1 in
             start|stop|restart|status|logs|build|clean|shell|health)
                 COMMAND="$1"
                 shift
+                ;;
+            scale)
+                COMMAND="$1"
+                shift
+                if [[ $# -gt 0 ]] && [[ "$1" =~ ^[0-9]+$ ]]; then
+                    SCALE_TARGET="$1"
+                    shift
+                fi
                 ;;
             --gpu)
                 USE_GPU="true"
@@ -226,6 +256,15 @@ main() {
             --standalone)
                 MODE="standalone"
                 shift
+                ;;
+            --workers)
+                shift
+                if [[ $# -gt 0 ]] && [[ "$1" =~ ^[0-9]+$ ]]; then
+                    WORKER_COUNT="$1"
+                    shift
+                else
+                    error "--workers 选项需要一个正整数参数"
+                fi
                 ;;
             -f)
                 FOLLOW_LOGS="true"
@@ -257,6 +296,7 @@ main() {
         clean)   cmd_clean ;;
         shell)   cmd_shell ;;
         health)  cmd_health ;;
+        scale)   cmd_scale "$SCALE_TARGET" ;;
     esac
 }
 
