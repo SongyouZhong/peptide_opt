@@ -38,17 +38,22 @@ services:
       # --- 应用配置 ---
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - POLL_INTERVAL=${POLL_INTERVAL:-30}
-      - CPU_CORES=${CPU_CORES:-10}  # 每个实例使用的 CPU 核心数
-      # - NVIDIA_VISIBLE_DEVICES=all  # GPU 支持已禁用
+      # CPU_CORES 不再需要手动设置，程序会自动检测 Docker 限制的 CPU 数量并使用 80%
+      # 如需手动覆盖，可取消下行注释：
+      # - CPU_CORES=4
+      - NVIDIA_VISIBLE_DEVICES=all  # GPU 支持 (RTX 5090 需要 CUDA 12.8+)
 
-    # CPU 资源限制（防止多实例资源竞争）
-    # 每个实例使用宿主机 20% 的 CPU 核心
+    # GPU + CPU 资源配置
     deploy:
       resources:
         limits:
-          cpus: '${CPU_LIMIT:-4}'  # 最多使用 4 个核心 (20% of 24)
+          cpus: '${CPU_LIMIT:-4}'  # 最多使用 4 个核心
         reservations:
           cpus: '${CPU_RESERVATION:-4}'  # 预留 4 个核心
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
     volumes:
       - peptide-data:/app/data
@@ -56,15 +61,6 @@ services:
 
     networks:
       - peptide-network
-
-    # GPU 支持（已禁用，如需启用请取消注释）
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

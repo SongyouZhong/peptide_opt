@@ -10,7 +10,7 @@ from pathlib import Path
 def run_optimizer(
     input_dir: str = "./data/input",
     output_dir: str = "./data/output",
-    cores: int = 12,
+    cores: int = None,  # None 表示自动检测（80% CPU）
     step: int = None,
     cleanup: bool = True,
     n_poses: int = 10,

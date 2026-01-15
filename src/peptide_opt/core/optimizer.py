@@ -23,14 +23,20 @@ class PeptideOptimizer:
     """肽段优化主类"""
     
     def __init__(self, input_dir="./input", output_dir="./output",
-                 proteinmpnn_dir="./ProteinMPNN/", cores=12, cleanup=True,
+                 proteinmpnn_dir="./ProteinMPNN/", cores=None, cleanup=True,
                  n_poses=10, num_seq_per_target=10, proteinmpnn_seed=37,
                  progress_callback=None, receptor_pdb_filename=None):
         # 确保所有路径都是绝对路径
         self.input_dir = Path(input_dir).resolve()
         self.output_dir = Path(output_dir).resolve()
         self.proteinmpnn_dir = Path(proteinmpnn_dir).resolve()
+        
+        # 自动检测 CPU 核心数（使用 80%，向下取整）
+        if cores is None:
+            from peptide_opt.config.settings import get_default_cores
+            cores = get_default_cores()
         self.cores = cores
+        
         self.cleanup = cleanup  # 是否清理中间文件
         self.progress_callback = progress_callback  # 进度回调函数
 
@@ -104,9 +110,9 @@ class PeptideOptimizer:
         if not peptide_fasta.exists():
             raise FileNotFoundError(f"Peptide FASTA file not found: {peptide_fasta}")
             
-        # 输出到中间文件目录，使用CPU模式（因为GPU需要较新版本的PyTorch）
-        command = f"omegafold --model 2 --device cpu {peptide_fasta} {self.middle_dir}"
-        self.run_command(command, "Predicting peptide structure (CPU mode)")
+        # 输出到中间文件目录，OmegaFold 自动检测 GPU (RTX 5090 需要 CUDA 12.8+ 和 PyTorch Nightly)
+        command = f"omegafold --model 2 {peptide_fasta} {self.middle_dir}"
+        self.run_command(command, "Predicting peptide structure (GPU accelerated)")
         
     def step2_add_hydrogens(self):
         """步骤2: 添加氢原子"""
@@ -187,6 +193,22 @@ class PeptideOptimizer:
             
             for command in commands:
                 self.run_command(command)
+                
+            # 检测 adcp 实际生成的 poses 数量
+            actual_poses = 0
+            for i in range(1, self.n_poses + 1):
+                if (self.middle_dir / f'peptide_ranked_{i}.pdb').exists():
+                    actual_poses = i
+                else:
+                    break
+            
+            if actual_poses < self.n_poses:
+                self.log(f"Warning: adcp only generated {actual_poses} poses (requested {self.n_poses})")
+                self.n_poses = actual_poses  # 更新为实际生成的数量
+                
+            if actual_poses == 0:
+                raise RuntimeError("adcp failed to generate any poses")
+                
         finally:
             # 恢复原始工作目录
             os.chdir(original_cwd)
@@ -561,7 +583,7 @@ def main():
     parser.add_argument('--input_dir', default='./input', help='Input directory')
     parser.add_argument('--output_dir', default='./output', help='Output directory')
     parser.add_argument('--proteinmpnn_dir', default='./ProteinMPNN/', help='ProteinMPNN directory')
-    parser.add_argument('--cores', type=int, default=4, help='Number of CPU cores for docking (~20%% of host)')
+    parser.add_argument('--cores', type=int, default=None, help='Number of CPU cores (default: auto-detect, 80%% of available)')
     parser.add_argument('--step', type=int, help='Run only specific step (1-8)')
     parser.add_argument('--no-cleanup', action='store_true', help='Keep intermediate files (useful for debugging)')
     parser.add_argument('--n_poses', type=int, default=10, help='Number of docking poses to generate (adcp -N parameter)')

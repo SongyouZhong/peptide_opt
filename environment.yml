@@ -2,7 +2,9 @@ name: peptide
 channels:
   - conda-forge
 dependencies:
+  - biopython
   - fastapi
+  - git
   - pandas
   - pip
   - pymol-open-source
@@ -11,10 +13,11 @@ dependencies:
   - asyncpg
   - aiohttp
   - pip:
-    # torch is installed separately in Dockerfile for CUDA compatibility
-    # OmegaFold is installed separately in Dockerfile
-    # vina is installed separately in Dockerfile
-    - biopython==1.85
+    # PyTorch 和 OmegaFold 在 Dockerfile 中单独安装以适配 CUDA 12.8 (RTX 5090)
+    # torch: 使用 PyTorch Nightly + CUDA 12.8
+    # OmegaFold: 使用 --no-deps 安装避免 PyTorch 降级
+    # fair-esm: 手动安装作为 OmegaFold 依赖
+    # vina 在 Dockerfile 中通过 conda-forge 安装
     - asyncpg>=0.29.0
     - psycopg2-binary>=2.9.9
     - aiohttp>=3.9.0

@@ -430,11 +430,13 @@ class AsyncTaskProcessor:
                 
                 proteinmpnn_path = self._find_proteinmpnn_dir()
                 
+                # CPU 核心数始终由运行环境自动检测（80% CPU），忽略配置文件中的 cores 值
+                # 这确保 Docker 容器能根据实际分配的 CPU 资源自动调整
                 optimizer = PeptideOptimizer(
                     input_dir=str(temp_input_dir),
                     output_dir=str(temp_output_dir),
                     proteinmpnn_dir=proteinmpnn_path,
-                    cores=config.get('cores', 12),
+                    cores=None,  # 始终自动检测，忽略 config.get('cores')
                     cleanup=config.get('cleanup', True),
                     n_poses=config.get('n_poses', 10),
                     num_seq_per_target=config.get('num_seq_per_target', 10),

@@ -18,6 +18,45 @@ except ImportError:
     pass
 
 
+# ============ CPU 核心数自动检测 ============
+
+def _detect_cpu_cores() -> int:
+    """
+    自动检测可用 CPU 核心数，返回 80% 的核心数（向下取整）
+    
+    在 Docker 容器中，os.cpu_count() 会返回 Docker 限制的 CPU 数量
+    （如果使用了 --cpus 或 deploy.resources.limits.cpus）
+    """
+    try:
+        cpu_count = os.cpu_count() or 4
+        # 使用 80% 的 CPU 核心，向下取整，最少 1 核
+        cores = max(1, int(cpu_count * 0.8))
+        return cores
+    except Exception:
+        return 4  # 出错时使用安全的默认值
+
+
+# 应用启动时初始化 CPU 核心数（只计算一次）
+DEFAULT_CPU_CORES: int = _detect_cpu_cores()
+
+
+def get_default_cores() -> int:
+    """
+    获取默认 CPU 核心数
+    
+    优先级：
+    1. CPU_CORES 环境变量（允许手动覆盖）
+    2. 自动检测的 80% CPU 核心数
+    """
+    env_cores = os.environ.get('CPU_CORES')
+    if env_cores:
+        try:
+            return int(env_cores)
+        except ValueError:
+            pass
+    return DEFAULT_CPU_CORES
+
+
 # 配置文件搜索路径
 def _find_settings_file() -> Optional[Path]:
     """查找配置文件"""

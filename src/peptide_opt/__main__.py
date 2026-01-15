@@ -59,8 +59,8 @@ def main():
     run_parser.add_argument(
         "--cores",
         type=int,
-        default=int(os.getenv("CPU_CORES", "4")),
-        help="Number of CPU cores for docking (default: from CPU_CORES env or 4, ~20%% of host)"
+        default=None,  # None 表示自动检测（80% CPU）
+        help="Number of CPU cores for docking (default: auto-detect, use 80%% of available CPUs)"
     )
     run_parser.add_argument(
         "--step",

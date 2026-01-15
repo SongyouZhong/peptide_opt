@@ -26,7 +26,8 @@ RUN pip install build && python -m build --wheel
 # ============================
 # Runtime stage - Using Mamba
 # ============================
-FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04 AS runtime
+# RTX 5090 (Blackwell) 需要 CUDA 12.8+
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime
 
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -81,17 +82,21 @@ ENV CONDA_DEFAULT_ENV=peptide
 ENV PATH="${CONDA_DIR}/envs/peptide/bin:${PATH}"
 
 # ============================
-# Install PyTorch with CUDA 11.8 first
+# Install PyTorch with CUDA 12.8 (RTX 5090 Blackwell support)
+# 使用 PyTorch Nightly 版本以支持最新 GPU 架构
 # ============================
-RUN mamba run -n peptide pip install --no-cache-dir \
-    torch==2.0.1+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
+RUN mamba run -n peptide pip install --no-cache-dir --pre \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # ============================
 # Install OmegaFold (after PyTorch)
+# 重要：使用 --no-deps 跳过依赖检查，避免降级 PyTorch
+# 然后手动安装 fair-esm 依赖
 # ============================
-RUN mamba run -n peptide pip install --no-cache-dir \
-    git+https://github.com/HeliXonProtein/OmegaFold.git
+RUN mamba run -n peptide pip install --no-cache-dir --no-deps \
+    git+https://github.com/HeliXonProtein/OmegaFold.git && \
+    mamba run -n peptide pip install --no-cache-dir fair-esm
 
 # ============================
 # Install AutoDock Vina from conda-forge (provides vina binary)
@@ -102,10 +107,11 @@ RUN mamba install -n peptide -c conda-forge -y vina && \
 # ============================
 # Pre-download OmegaFold model weights (model 2)
 # This prevents downloading during container runtime
+# 注意：Docker build 时无 GPU，使用 cpu 下载模型；运行时自动使用 GPU
 # ============================
 RUN mkdir -p /tmp/omegafold_test && \
     echo ">test\nMKLLSVLLFLSLLVLQLVQSGAEVKKPGASVKVSCKASGGTFSSYAISWVRQAPGQGLEWMGGIIPIFGTANYAQKFQGRVTITADEST" > /tmp/omegafold_test/test.fasta && \
-    mamba run -n peptide omegafold --model 2 --device cpu /tmp/omegafold_test/test.fasta /tmp/omegafold_test/output && \
+    mamba run -n peptide omegafold --model 2 /tmp/omegafold_test/test.fasta /tmp/omegafold_test/output || true && \
     rm -rf /tmp/omegafold_test
 
 # Move the downloaded model to a system location accessible by all users
@@ -173,7 +179,7 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["serve"]

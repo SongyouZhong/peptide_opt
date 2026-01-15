@@ -52,17 +52,15 @@ cd ADFRsuite_x86_64Linux_1.0
 #### 3. AutoDock Vina (结合评分计算)
 
 ```bash
-# 方式一：pip 安装
-pip install vina
+# mamba 安装
+mamba install -c conda-forge vina
 
-# 方式二：apt 安装
-sudo apt-get install autodock-vina
 ```
 
 #### 4. PyMOL (添加氢原子和突变)
 
 ```bash
-conda install -c conda-forge -c schrodinger pymol-bundle
+mamba install -c conda-forge -c schrodinger pymol-bundle
 ```
 
 #### 5. BioPython
@@ -85,9 +83,9 @@ git clone https://github.com/dauparas/ProteinMPNN vendor/ProteinMPNN
 git clone https://github.com/yourusername/peptide-opt.git
 cd peptide-opt
 
-# 方式一：使用 conda 环境（推荐）
-conda env create -f environment.yml
-conda activate peptide
+# 方式一：使用 mamba 环境（推荐）
+mamba env create -f environment.yml
+mamba activate peptide
 
 # 方式二：使用 venv
 python -m venv .venv
