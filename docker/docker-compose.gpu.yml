@@ -1,17 +1,17 @@
 version: '3.8'
 
-# GPU 版本配置
+# GPU 版本配置 (已整合到主 docker-compose.yml 中)
+# 此文件保留用于单独覆盖 GPU 设置
 # 使用方法: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 
-services:
-  peptide-opt:
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+x-gpu-config: &gpu-env
+  environment:
+    - NVIDIA_VISIBLE_DEVICES=all
 
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+services:
+  peptide-opt-1:
+    <<: *gpu-env
+  peptide-opt-2:
+    <<: *gpu-env
+  peptide-opt-3:
+    <<: *gpu-env

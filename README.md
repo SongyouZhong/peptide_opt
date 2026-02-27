@@ -122,18 +122,27 @@ peptide-opt run \
 
 ### Docker 部署
 
+项目采用 **3-worker 架构**，每个 worker 独占部分 P-core 并共享 E-core（针对 Intel Core Ultra 9 285K 优化）。
+
 ```bash
 # 复制环境变量配置
 cp .env.example .env
 # 编辑 .env 设置数据库密码等
 
-# 构建并启动
+# 构建并启动全部 3 个 worker
 cd docker
 docker compose up -d
 
+# 仅启动部分 worker
+docker compose up -d peptide-opt-1
+docker compose up -d peptide-opt-1 peptide-opt-2
+
 # 查看日志
-docker compose logs -f peptide-opt
+docker compose logs -f                  # 所有 worker
+docker compose logs -f peptide-opt-1    # 指定 worker
 ```
+
+> **CPU 绑定策略**: Worker 1 → P-core 0-2, Worker 2 → P-core 3-5, Worker 3 → P-core 6-7，三者共享 E-core 8-23。
 
 ## 📁 项目结构
 
@@ -185,6 +194,8 @@ SEAWEED_BUCKET=peptide-opt
 MAX_WORKERS=2
 POLL_INTERVAL=30
 ```
+
+> **CPU 核心自动检测**: 程序会按优先级检测可用 CPU 核心数——cgroup v2 → cgroup v1 → `sched_getaffinity`（受 cpuset 限制）→ `os.cpu_count()`——并自动使用 80% 的核心。在 Docker 容器中能正确识别 `--cpus` 和 `cpuset` 限制。
 
 ## 🧪 测试
 

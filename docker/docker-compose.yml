@@ -1,73 +1,102 @@
+# ============================================================
+# Peptide Optimization Workers - 3 实例独占 P-core + 共享 E-core
+# ============================================================
+# Intel Core Ultra 9 285K 核心布局:
+#   P-core: CPU 0-7   (8核, 5.5-5.7 GHz, 高性能, 独立 L2)
+#   E-core: CPU 8-23  (16核, 4.7 GHz, 能效核, 共享 L2)
+#
+# 分配策略:
+#   Worker 1: P-core 0,1,2 (独占) + E-core 8-23 (共享)
+#   Worker 2: P-core 3,4,5 (独占) + E-core 8-23 (共享)
+#   Worker 3: P-core 6,7   (独占) + E-core 8-23 (共享)
+#
+# 启动方式:
+#   全部启动:     docker compose up -d
+#   启动1个:      docker compose up -d peptide-opt-1
+#   启动2个:      docker compose up -d peptide-opt-1 peptide-opt-2
+# ============================================================
+
+x-peptide-worker: &peptide-worker
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: peptide-opt:latest
+  restart: on-failure:3
+  env_file:
+    - ../.env
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment: &peptide-env
+    # --- 数据库连接 ---
+    - DB_HOST=host.docker.internal
+    - DB_PORT=5432
+    - DB_USER=${DB_USER:-admin}
+    - DB_PASSWORD=${DB_PASSWORD:-secret}
+    - DB_NAME=${DB_NAME:-mydatabase}
+    # --- SeaweedFS 连接 ---
+    - SEAWEED_FILER_ENDPOINT=http://host.docker.internal:8888
+    - SEAWEED_BUCKET=${SEAWEED_BUCKET:-astramolecula}
+    # --- 应用配置 ---
+    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    - POLL_INTERVAL=${POLL_INTERVAL:-30}
+    - NVIDIA_VISIBLE_DEVICES=all
+  volumes:
+    - peptide-data:/app/data
+    - peptide-logs:/app/logs
+  networks:
+    - peptide-network
+  healthcheck:
+    test: ["CMD-SHELL", "curl -f http://localhost:${PORT:-8000}/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 10s
+
 services:
-  peptide-opt:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: peptide-opt:latest
-    # 移除 container_name 以支持多实例部署 (docker compose up --scale peptide-opt=N)
-    # container_name: peptide-opt
-    restart: on-failure:3
-    env_file:
-      - ../.env
-    # 移除固定端口映射，多实例模式下不需要暴露端口（作为worker运行）
-    # 如需API访问，请使用独立的API服务或负载均衡
-    # ports:
-    #   - "${PORT:-8002}:8000"
-    
-    # 关键配置：让容器能解析 "host.docker.internal" 到宿主机 IP
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    environment:
-      # --- 数据库连接 ---
-      # 指向宿主机，因为 postgres-container 映射了 5432 端口
-      - DB_HOST=host.docker.internal
-      - DB_PORT=5432
-      # 注意：你需要确认现有的 postgres-container 的用户名密码是否为 admin/secret
-      # 如果不是，请修改这里或使用 .env 文件
-      - DB_USER=${DB_USER:-admin}
-      - DB_PASSWORD=${DB_PASSWORD:-secret}
-      - DB_NAME=${DB_NAME:-mydatabase}
-
-      # --- 文件系统连接 ---
-      # 指向宿主机，因为 local_seaweedfs-filer-1 映射了 8888 端口
-      - SEAWEED_FILER_ENDPOINT=http://host.docker.internal:8888
-      # 注意：必须与 AstraMolecula 使用相同的 bucket (astramolecula)
-      - SEAWEED_BUCKET=${SEAWEED_BUCKET:-astramolecula}
-
-      # --- 应用配置 ---
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - POLL_INTERVAL=${POLL_INTERVAL:-30}
-      # CPU_CORES 不再需要手动设置，程序会自动检测 Docker 限制的 CPU 数量并使用 80%
-      # 如需手动覆盖，可取消下行注释：
-      # - CPU_CORES=4
-      - NVIDIA_VISIBLE_DEVICES=all  # GPU 支持 (RTX 5090 需要 CUDA 12.8+)
-
-    # GPU + CPU 资源配置
+  # --- Worker 1: P-core 0,1,2 (独占) + E-core 8-23 (共享) ---
+  peptide-opt-1:
+    <<: *peptide-worker
+    container_name: peptide-opt-1
+    cpuset: '0-2,8-23'
     deploy:
       resources:
         limits:
-          cpus: '${CPU_LIMIT:-4}'  # 最多使用 4 个核心
+          cpus: '4'
         reservations:
-          cpus: '${CPU_RESERVATION:-4}'  # 预留 4 个核心
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
 
-    volumes:
-      - peptide-data:/app/data
-      - peptide-logs:/app/logs
+  # --- Worker 2: P-core 3,4,5 (独占) + E-core 8-23 (共享) ---
+  peptide-opt-2:
+    <<: *peptide-worker
+    container_name: peptide-opt-2
+    cpuset: '3-5,8-23'
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
-    networks:
-      - peptide-network
-
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+  # --- Worker 3: P-core 6,7 (独占) + E-core 8-23 (共享) ---
+  peptide-opt-3:
+    <<: *peptide-worker
+    container_name: peptide-opt-3
+    cpuset: '6-7,8-23'
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   peptide-data:
